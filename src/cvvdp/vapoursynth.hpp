@@ -13,6 +13,7 @@ namespace cvvdp{
         threadSet<int>* streamSet;
         std::mutex* mutex;
         int new_width, new_height;
+        bool disableTemporal;
     } CVVDPData;
     
     static const VSFrame *VS_CC CVVDPGetFrame(int n, int activationReason, void *instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
@@ -71,6 +72,10 @@ namespace cvvdp{
                     val = CVVDPstream.run(vsapi->getWritePtr(dst, 0), vsapi->getStride(dst, 0), srcp1, srcp2, lineSize, lineSize2);
                 } else {
                     val = CVVDPstream.run(NULL, 0, srcp1, srcp2, lineSize, lineSize2);
+                }
+                if (d->disableTemporal) {
+                    CVVDPstream.flushTemporalRing();
+                    CVVDPstream.flushOnlyScore();
                 }
             } catch (const VshipError& e){
                 vsapi->setFilterError(e.getErrorMessage().c_str(), frameCtx);
@@ -152,6 +157,10 @@ namespace cvvdp{
         d.diffmap = vsapi->mapGetInt(in, "distmap", 0, &error);
         if (error != peSuccess){
             d.diffmap = 0.;
+        }
+        d.disableTemporal = vsapi->mapGetInt(in, "disableTemporal", 0, &error);
+        if (error != peSuccess){
+            d.disableTemporal = 0;
         }
         const char* model_key_cstr = vsapi->mapGetData(in , "model_name", 0, &error);
         if (error != peSuccess){

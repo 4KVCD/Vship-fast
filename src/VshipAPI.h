@@ -170,6 +170,7 @@ EXPORTPREPROCESS Vship_Exception Vship_CVVDPGetDistmapResolution(Vship_CVVDPHand
 
 //Allows to empty the frame history. Since the metric is temporal, you may want to reset without recreating a whole new handler since it is quite expensive
 //Unlike recreating the handler, this function is basically free perf wise, it is setting a variable to 0, that's it!
+//only reset temporal filter but not score accumulation! to reset both you need to use both this function and below
 EXPORTPREPROCESS Vship_Exception Vship_ResetCVVDP(Vship_CVVDPHandler handler);
 
 //This function is to not empty the temporal filter history but the score (useful to get per scene scores)
