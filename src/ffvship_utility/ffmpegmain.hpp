@@ -809,6 +809,25 @@ void printColorspace(Vship_Colorspace_t colorspace){
     std::cout << std::endl;
 }
 
+void printVulkanFeatureMatrix(Vship_VulkanFeatureMatrix& features){
+    std::cout << "storageBuffer16BitAccess : " << features.storageBuffer16BitAccess << std::endl;
+    std::cout << "uniformAndStorageBuffer16BitAccess : " << features.uniformAndStorageBuffer16BitAccess << std::endl;
+    std::cout << "variablePointersStorageBuffer : " << features.variablePointersStorageBuffer << std::endl;
+    std::cout << "variablePointers : " << features.variablePointers << std::endl;
+    std::cout << "storagePushConstant8 : " << features.storagePushConstant8 << std::endl;
+    std::cout << "storageBuffer8BitAccess : " << features.storageBuffer8BitAccess << std::endl;
+    std::cout << "uniformAndStorageBuffer8BitAccess : " << features.uniformAndStorageBuffer8BitAccess << std::endl;
+    std::cout << "shaderFloat16 : " << features.shaderFloat16 << std::endl; //not required, fp16 is disabled by default in vulkan build
+    std::cout << "shaderFloat64 : " << features.shaderFloat64 << std::endl;
+    std::cout << "shaderInt8 : " << features.shaderInt8 << std::endl;
+    std::cout << "shaderInt16 : " << features.shaderInt16 << std::endl;
+    std::cout << "shaderInt64 : " << features.shaderInt64 << std::endl;
+    std::cout << "bufferDeviceAddress : " << features.bufferDeviceAddress << std::endl;
+    std::cout << "shaderStorageBufferArrayDynamicIndexing : " << features.shaderStorageBufferArrayDynamicIndexing << std::endl;
+    std::cout << "synchronization2 : " << features.synchronization2 << std::endl;
+    std::cout << "logicOp : " << features.logicOp << std::endl;
+}
+
 struct CommandLineOptions {
     std::string source_file;
     std::string encoded_file;
@@ -832,8 +851,9 @@ struct CommandLineOptions {
     int gpu_threads = 3;
     int cpu_threads = 1;
 
-    bool list_gpus = false;
     bool version = false;
+    bool list_gpus = false;
+    bool gpu_info = false;
     bool verbose = false;
     MetricType metric = MetricType::SSIMULACRA2; //SSIMULACRA2 by default
 
@@ -925,6 +945,7 @@ CommandLineOptions parse_command_line_arguments(int argc, char **argv) {
     parser.add_flag({"--gpu-threads", "-g"}, &opts.gpu_threads, "GPU thread count, recommended is 3");
     parser.add_flag({"--gpu-id"}, &opts.metricParam.gpu_id, "GPU index");
     parser.add_flag({"--list-gpu"}, &opts.list_gpus, "List available GPUs");
+    parser.add_flag({"--gpu-info"}, &opts.gpu_info, "Gives Extended Informations on the selected GPU");
     parser.add_flag({"--version"}, &opts.version, "Print FFVship version");
     parser.add_flag({"--verbose"}, &opts.verbose, "Print Colorspace found in Source and encoded");
 
@@ -933,7 +954,7 @@ CommandLineOptions parse_command_line_arguments(int argc, char **argv) {
         return opts;
     }
 
-    if (opts.list_gpus || opts.version) return opts;
+    if (opts.list_gpus || opts.version || opts.gpu_info) return opts;
 
     try {
         opts.source_indices_list = splitPerToken(source_indices_str);

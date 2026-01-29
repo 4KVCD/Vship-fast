@@ -66,8 +66,6 @@ double ssimu2GPUProcess(float* src1_d[3], float* src2_d[3], float* temp_d, int64
         throw e;
     }
 
-    //step 6 : format the vector
-
     //step 7 : enjoy !
     const double ssim = final_score(allscore_res);
 

@@ -212,13 +212,17 @@ int main(int argc, char **argv) {
 
     if (cli_args.version){
         Vship_Version vshipVersion = Vship_GetVersion();
-        std::cout << "FFVship 4.1.0-a" << std::endl;
+        std::cout << "FFVship 5.0.0-a" << std::endl;
         std::cout << "Repository : https://github.com/Line-fr/Vship" << std::endl;
         std::cout << "Linked against libvship version " << vshipVersion.major << "." << vshipVersion.minor << "." << vshipVersion.minorMinor << std::endl;
         if (vshipVersion.backend == Vship_Cuda){
             std::cout << "Cuda version" << std::endl;
-        } else {
+        } else if (vshipVersion.backend == Vship_Vulkan){
+            std::cout << "Vulkan version" << std::endl;
+        } else if (vshipVersion.backend == Vship_HIP){
             std::cout << "HIP version" << std::endl;
+        } else {
+            std::cout << "Unknown version" << std::endl;
         }
         return 0;
     }
@@ -246,15 +250,46 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    //force -g,-t and --every at 1 when cvvdp is used because the metric is temporal
-    if (cli_args.metric == MetricType::CVVDP) {
-        cli_args.gpu_threads = 1;
-        cli_args.cpu_threads = 1;
-        cli_args.every_nth_frame = 1;
-        if (!cli_args.source_indices_list.empty() || !cli_args.encoded_indices_list.empty()){
-            std::cerr << "You cannot use custom indice list with CVVDP, it is a video metric and needs sequential processing" << std::endl;
+    if (cli_args.gpu_info){
+        // gpu sanity check
+        int numgpu;
+        char errmsg[1024];
+        Vship_Version vshipVersion = Vship_GetVersion();
+        Vship_Exception err = Vship_GetDeviceCount(&numgpu);
+        if (err != Vship_NoError){
+            Vship_GetDetailedLastError(errmsg, 1024);
+            std::cerr << errmsg << std::endl;
             return 1;
         }
+        if (cli_args.metricParam.gpu_id >= numgpu || cli_args.metricParam.gpu_id < 0){
+            std::cerr << "Invalid Gpu ID Passed" << std::endl;
+            return 1;
+        }
+        Vship_DeviceInfo devinfo;
+        err = Vship_GetDeviceInfo(&devinfo, cli_args.metricParam.gpu_id);
+        if (err != Vship_NoError){
+            Vship_GetDetailedLastError(errmsg, 1024);
+            std::cerr << errmsg << std::endl;
+            return 1;
+        }
+        bool passesKernelCheck = true;
+        err = Vship_GPUFullCheck(cli_args.metricParam.gpu_id);
+        if (err != Vship_NoError){
+            Vship_GetDetailedLastError(errmsg, 1024);
+            passesKernelCheck = false;
+        }
+        std::cout << "GPU " << cli_args.metricParam.gpu_id << ": " << devinfo.name << std::endl;
+        std::cout << "Passes Kernel Check: " << passesKernelCheck << std::endl;
+        std::cout << "Integrated: " << devinfo.integrated << std::endl;
+
+        if (vshipVersion.backend == Vship_HIP || vshipVersion.backend == Vship_Cuda){
+            std::cout << "MultiProcessorCount: " << devinfo.MultiProcessorCount << std::endl;
+            std::cout << "VRAM Size: " << devinfo.VRAMSize << std::endl;
+            std::cout << "WarpSize: " << devinfo.WarpSize << std::endl;
+        } else if (vshipVersion.backend == Vship_Vulkan){
+            printVulkanFeatureMatrix(devinfo.vulkanFeatureMatrix);
+        }
+        return 0;
     }
 
     // gpu sanity check
@@ -265,15 +300,25 @@ int main(int argc, char **argv) {
         std::cerr << errmsg << std::endl;
         return 1;
     }
-    /*not needed anymore we defined gpu_id in handler directly
-    err = Vship_SetDevice(cli_args.gpu_id);
+    //not needed anymore we defined gpu_id in handler directly
+    err = Vship_SetDevice(cli_args.metricParam.gpu_id);
     if (err != Vship_NoError){
         char errmsg[1024];
         Vship_GetDetailedLastError(errmsg, 1024);
         std::cerr << errmsg << std::endl;
         return 1;
     }
-    */
+
+    //force -g,-t and --every at 1 when cvvdp is used because the metric is temporal
+    if (cli_args.metric == MetricType::CVVDP) {
+        cli_args.gpu_threads = 1;
+        cli_args.cpu_threads = 1;
+        cli_args.every_nth_frame = 1;
+        if (!cli_args.source_indices_list.empty() || !cli_args.encoded_indices_list.empty()){
+            std::cerr << "You cannot use custom indice list with CVVDP, it is a video metric and needs sequential processing" << std::endl;
+            return 1;
+        }
+    }
 
     auto init = std::chrono::high_resolution_clock::now();
 

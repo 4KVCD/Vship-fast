@@ -23,6 +23,7 @@ extern "C"{
 typedef enum{
     Vship_HIP = 0,
     Vship_Cuda = 1,
+    Vship_Vulkan = 2,
 } Vship_Backend;
 
 typedef struct {
@@ -59,9 +60,10 @@ typedef enum{
     //API related
     Vship_BadHandler = 10,
     Vship_BadPointer = 11,
+    Vship_NotSupported = 15,
 
     //should not be used
-    Vship_BadErrorType = 15,
+    Vship_BadErrorType = 16,
 } Vship_Exception;
 
 //Get the number of GPU
@@ -70,6 +72,27 @@ EXPORTPREPROCESS Vship_Exception Vship_GetDeviceCount(int* number);
 //default device is default by HIP/Cuda (0)
 EXPORTPREPROCESS Vship_Exception Vship_SetDevice(int gpu_id);
 
+//if set to false means that the gpu does not support it
+typedef struct Vship_VulkanFeatureMatrix{
+    bool storageBuffer16BitAccess;
+    bool uniformAndStorageBuffer16BitAccess;
+    bool variablePointersStorageBuffer;
+    bool variablePointers;
+    bool storagePushConstant8;
+    bool storageBuffer8BitAccess;
+    bool uniformAndStorageBuffer8BitAccess;
+    bool shaderFloat16; //not required, fp16 is disabled by default in vulkan build
+    bool shaderFloat64;
+    bool shaderInt8;
+    bool shaderInt16;
+    bool shaderInt64;
+    bool bufferDeviceAddress;
+    bool shaderStorageBufferArrayDynamicIndexing;
+    bool synchronization2;
+    bool logicOp;
+    bool FutureFeatures[10]; //reserved for future use
+} Vship_VulkanFeatureMatrix;
+
 //more features might be added later on in this struct
 typedef struct Vship_DeviceInfo{
     char name[256];
@@ -77,6 +100,7 @@ typedef struct Vship_DeviceInfo{
     int integrated; //iGPU? (boolean)
     int MultiProcessorCount;
     int WarpSize;
+    Vship_VulkanFeatureMatrix vulkanFeatureMatrix; //only set for Vulkan
 } Vship_DeviceInfo;
 
 EXPORTPREPROCESS Vship_Exception Vship_GetDeviceInfo(Vship_DeviceInfo* device_info, int gpu_id);

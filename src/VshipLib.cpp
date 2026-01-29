@@ -90,7 +90,7 @@ extern "C"{
 
 Vship_Version Vship_GetVersion(){
     Vship_Version res;
-    res.major = 4; res.minor = 1; res.minorMinor = 0;
+    res.major = 5; res.minor = 0; res.minorMinor = 0;
     #if defined __CUDACC__
     res.backend = Vship_Cuda;
     #else

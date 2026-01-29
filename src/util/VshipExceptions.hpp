@@ -33,9 +33,10 @@ enum VSHIPEXCEPTTYPE{
     //API related
     BadHandler = 10,
     BadPointer = 11,
+    NotSupported = 15,
 
     //should not be used
-    BadErrorType = 15,
+    BadErrorType = 16,
 };
 
 std::string errorMessage(VSHIPEXCEPTTYPE type){
