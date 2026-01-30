@@ -811,13 +811,13 @@ void printColorspace(Vship_Colorspace_t colorspace){
 
 void printVulkanFeatureMatrix(Vship_VulkanFeatureMatrix& features){
     std::cout << "storageBuffer16BitAccess : " << features.storageBuffer16BitAccess << std::endl;
-    std::cout << "uniformAndStorageBuffer16BitAccess : " << features.uniformAndStorageBuffer16BitAccess << std::endl;
+    std::cout << "uniformAndStorageBuffer16BitAccess : " << features.uniformAndStorageBuffer16BitAccess << " (not required)" << std::endl;
     std::cout << "variablePointersStorageBuffer : " << features.variablePointersStorageBuffer << std::endl;
     std::cout << "variablePointers : " << features.variablePointers << std::endl;
-    std::cout << "storagePushConstant8 : " << features.storagePushConstant8 << std::endl;
+    std::cout << "storagePushConstant8 : " << features.storagePushConstant8 << " (not required)" << std::endl;
     std::cout << "storageBuffer8BitAccess : " << features.storageBuffer8BitAccess << std::endl;
     std::cout << "uniformAndStorageBuffer8BitAccess : " << features.uniformAndStorageBuffer8BitAccess << std::endl;
-    std::cout << "shaderFloat16 : " << features.shaderFloat16 << std::endl; //not required, fp16 is disabled by default in vulkan build
+    std::cout << "shaderFloat16 : " << features.shaderFloat16 << " (not required in default build)" << std::endl;
     std::cout << "shaderFloat64 : " << features.shaderFloat64 << std::endl;
     std::cout << "shaderInt8 : " << features.shaderInt8 << std::endl;
     std::cout << "shaderInt16 : " << features.shaderInt16 << std::endl;

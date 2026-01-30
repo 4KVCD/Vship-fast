@@ -86,6 +86,9 @@ std::string errorMessage(VSHIPEXCEPTTYPE type){
         case BadPointer:
         return "BadPointer: The pointer passed as an argument was not valid and returned an error. (Advice) If this happened while trying to free, was it allocated using the same method and not modified?";
 
+        case NotSupported:
+        return "NotSupported: The libvship library that is used does not yet implement the requested feature";
+
         case BadErrorType:
         return "BadErrorType: There was an unknown error";
     }
