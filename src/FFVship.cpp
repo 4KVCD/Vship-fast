@@ -515,6 +515,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    //cleanup 
+    for (auto& el: frame_buffers) {
+        GpuWorker::deallocate_external_buffer(el);
+    }
+
     if (!cli_args.live_index_score_output){
         std::cout << std::endl; //end of progressbar
         delete progressBar;
