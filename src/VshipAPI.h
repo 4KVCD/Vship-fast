@@ -75,10 +75,10 @@ EXPORTPREPROCESS Vship_Exception Vship_SetDevice(int gpu_id);
 //if set to false means that the gpu does not support it
 typedef struct Vship_VulkanFeatureMatrix{
     bool storageBuffer16BitAccess;
-    bool uniformAndStorageBuffer16BitAccess;
+    bool uniformAndStorageBuffer16BitAccess; //not required
     bool variablePointersStorageBuffer;
     bool variablePointers;
-    bool storagePushConstant8;
+    bool storagePushConstant8; //not required
     bool storageBuffer8BitAccess;
     bool uniformAndStorageBuffer8BitAccess;
     bool shaderFloat16; //not required, fp16 is disabled by default in vulkan build
