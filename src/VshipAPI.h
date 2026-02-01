@@ -82,7 +82,7 @@ typedef struct Vship_VulkanFeatureMatrix{
     bool storageBuffer8BitAccess;
     bool uniformAndStorageBuffer8BitAccess;
     bool shaderFloat16; //not required, fp16 is disabled by default in vulkan build
-    bool shaderFloat64;
+    bool shaderFloat64; //not required
     bool shaderInt8;
     bool shaderInt16;
     bool shaderInt64;
