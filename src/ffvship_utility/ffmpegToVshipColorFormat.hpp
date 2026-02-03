@@ -373,12 +373,6 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
             out.primaries = Vship_PRIMARIES_ST240_M;
             break;
         /*
-        case AVCOL_PRI_SMPTE170M:
-            out.color_primaries = ZIMG_PRIMARIES_ST170_M;
-            break;
-        case AVCOL_PRI_SMPTE240M:
-            out.color_primaries = ZIMG_PRIMARIES_ST240_M;
-            break;
         case AVCOL_PRI_FILM:
             out.color_primaries = ZIMG_PRIMARIES_FILM;
             break;
@@ -393,9 +387,11 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
         case AVCOL_PRI_SMPTE431:
             out.color_primaries = ZIMG_PRIMARIES_ST431_2;
             break;
+        */
         case AVCOL_PRI_SMPTE432:
-            out.color_primaries = ZIMG_PRIMARIES_ST432_1;
+            out.primaries = Vship_PRIMARIES_DisplayP3;
             break;
+        /*
         case AVCOL_PRI_EBU3213:
             out.color_primaries = ZIMG_PRIMARIES_EBU3213_E;
             break;

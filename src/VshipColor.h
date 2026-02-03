@@ -68,6 +68,7 @@ typedef enum Vship_Primaries_t{
     Vship_PRIMARIES_ST170_M = 6,
 	Vship_PRIMARIES_ST240_M = 7,  // Equivalent to 6.
     Vship_PRIMARIES_BT2020 = 9,
+    Vship_PRIMARIES_DisplayP3 = 12,
 } Vship_Primaries_t;
 
 typedef struct Vship_CropRectangle_t {

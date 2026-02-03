@@ -120,6 +120,25 @@ __device__ float3 inline primariesToPrimaries_device<Vship_PRIMARIES_INTERNAL, V
     return res;
 }
 
+//source https://en.wikipedia.org/wiki/DCI-P3
+template<>
+__device__ float3 inline primariesToPrimaries_device<Vship_PRIMARIES_DisplayP3, Vship_PRIMARIES_INTERNAL>(float3 a){
+    float3 res;
+    res.x = fmaf(a.x, 0.48655f, fmaf(a.y, 0.26578f, a.z*0.198168f));
+    res.y = fmaf(a.x, 0.22897f, fmaf(a.y, 0.69177f, a.z*0.0792672f));
+    res.z = fmaf(a.x, 0.f, fmaf(a.y, 0.0451152f, a.z*1.04368f));
+    return res;
+}
+
+template<>
+__device__ float3 inline primariesToPrimaries_device<Vship_PRIMARIES_INTERNAL, Vship_PRIMARIES_DisplayP3>(float3 a){
+    float3 res;
+    res.x = fmaf(a.x, 2.493586f, fmaf(a.y, -0.93141683f, -a.z*0.40272514f));
+    res.y = fmaf(a.x, -0.82945554f, fmaf(a.y, 1.76259303f, a.z*0.02362373f));
+    res.z = fmaf(a.x, 0.03585475f, fmaf(a.y, -0.07619133f, a.z*0.95712251f));
+    return res;
+}
+
 //this one is used a lot so we do it in one matrix instead of 2
 template<>
 __device__ float3 inline primariesToPrimaries_device<Vship_PRIMARIES_BT2020, Vship_PRIMARIES_BT709>(float3 a){
@@ -189,6 +208,9 @@ void inline primariesToPrimaries_template1(float* p0, float* p1, float* p2, int6
         case Vship_PRIMARIES_BT2020:
             primariesToPrimaries_allTemplate<Vship_PRIMARIES_BT2020, T2>(p0, p1, p2, width, stream);
             break;
+        case Vship_PRIMARIES_DisplayP3:
+            primariesToPrimaries_allTemplate<Vship_PRIMARIES_DisplayP3, T2>(p0, p1, p2, width, stream);
+            break;
     }
 }
 
@@ -215,6 +237,9 @@ void inline primariesToPrimaries(float* p0, float* p1, float* p2, int64_t width,
             break;
         case Vship_PRIMARIES_BT2020:
             primariesToPrimaries_template1<Vship_PRIMARIES_BT2020>(p0, p1, p2, width, src_primary, stream);
+            break;
+        case Vship_PRIMARIES_DisplayP3:
+            primariesToPrimaries_template1<Vship_PRIMARIES_DisplayP3>(p0, p1, p2, width, src_primary, stream);
             break;
     }
 }
