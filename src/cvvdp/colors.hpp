@@ -100,11 +100,6 @@ __device__ void inline displayEncode_Device<Vship_TRC_PQ>(float& a, float Y_peak
     a = max(max(0.005f, Y_black), min(Y_peak, a*exposure)) + Y_black + Y_refl;
 }
 
-template<>
-__device__ void inline displayEncode_Device<Vship_TRC_Linear>(float& a, float Y_peak, float Y_black, float Y_refl, float exposure){
-    a = max(max(0.005f, Y_black), min(Y_peak, a*exposure)) + Y_refl;
-}
-
 template<Vship_TransferFunction_t transferFunction>
 __global__ void displayEncode_Kernel(float* p, int64_t width, float Y_peak, float Y_black, float Y_refl, float exposure){
     const int64_t x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -125,10 +120,8 @@ void inline displayEncode(float* src_d, int64_t width, float Y_peak, float Y_bla
         case Vship_TRC_PQ:
             displayEncode_Kernel<Vship_TRC_PQ><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d, width, Y_peak, Y_black, Y_refl, exposure);
             break;
-        case Vship_TRC_Linear:
-            displayEncode_Kernel<Vship_TRC_Linear><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d, width, Y_peak, Y_black, Y_refl, exposure);
-            break;
         //treated same as BT709/sRGB
+        case Vship_TRC_Linear:
         case Vship_TRC_HLG:
         default:
             displayEncode_Kernel<Vship_TRC_BT709><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d, width, Y_peak, Y_black, Y_refl, exposure);
