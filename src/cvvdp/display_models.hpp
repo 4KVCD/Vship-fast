@@ -224,7 +224,7 @@ private:
                 std::string theircolorspace = parseString(stream);
                 if (theircolorspace == "HDR" || theircolorspace == "BT.2020-PQ" || theircolorspace == "BT.2020-HLG"){
                     colorspace = HDR;
-                } else if (theircolorspace == "BT.709-linear" || theircolorspace == "sRGB" || theircolorspace == "SDR"){
+                } else if (theircolorspace == "BT.709-linear" || theircolorspace == "sRGB" || theircolorspace == "SDR" || theircolorspace == "Display P3 Apple"){
                     colorspace = sRGB;
                 } else {
                     throw VshipError(BadJson, __FILE__, __LINE__, "colospace can either be BT.2020-PQ, BT.2020-HLG, BT.709-linear, HDR, sRGB or SDR");
