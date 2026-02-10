@@ -12,6 +12,7 @@ extern "C" {
 #include <cstdlib>
 #include <optional>
 #include <cstring>
+#include <bit>
 
 #ifndef ASSERT_WITH_MESSAGE
 #define ASSERT_WITH_MESSAGE(condition, message)\
@@ -451,6 +452,17 @@ class BasicConverterProcessor {
             planeSizeUnpack[2] = unpack_stride[2]*height;
             break;
 
+            //bitdepth 16, 422
+            case AV_PIX_FMT_Y216LE:
+            unpack_stride[0] = width*2;
+            unpack_stride[1] = (width);
+            unpack_stride[2] = unpack_stride[1]; //same for both chroma
+
+            planeSizeUnpack[0] = unpack_stride[0]*height;
+            planeSizeUnpack[1] = unpack_stride[1]*height;
+            planeSizeUnpack[2] = unpack_stride[2]*height;
+            break;
+
             //bitdepth 8, 444
             case AV_PIX_FMT_RGB24:
             case AV_PIX_FMT_ARGB:
@@ -467,6 +479,8 @@ class BasicConverterProcessor {
             break;
 
             //depth 16, 444
+            case AV_PIX_FMT_RGB48BE:
+            case AV_PIX_FMT_RGBA64BE:
             case AV_PIX_FMT_RGB48LE:
             case AV_PIX_FMT_RGBA64LE:
             unpack_stride[0] = width*2;
@@ -500,6 +514,20 @@ class BasicConverterProcessor {
             return;
         }
         switch (src_pixfmt){
+            case AV_PIX_FMT_Y216LE:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width/2; i++){
+                        //Y
+                        ((uint16_t*)(unpack_buffer[0]))[j*unpack_stride[0]+2*i] = ((uint16_t*)(src->Data[0]))[j*src->Linesize[0]+4*i];
+                        //U
+                        ((uint16_t*)(unpack_buffer[1]))[j*unpack_stride[1]+i] = ((uint16_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+1];
+                        //Y
+                        ((uint16_t*)(unpack_buffer[0]))[j*unpack_stride[0]+2*i+1] = ((uint16_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+2];
+                        //V
+                        ((uint16_t*)(unpack_buffer[2]))[j*unpack_stride[2]+i] = ((uint16_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+3];
+                    }
+                }
+            break;
             case AV_PIX_FMT_YUYV422:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width/2; i++){
@@ -525,6 +553,24 @@ class BasicConverterProcessor {
                         unpack_buffer[2][j*unpack_stride[2]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+2];
                         //Y
                         unpack_buffer[0][j*unpack_stride[0]+2*i+1] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+3];
+                    }
+                }
+            break;
+            case AV_PIX_FMT_RGB48BE:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i]);
+                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+1]);
+                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+2]);
+                    }
+                }
+            break;
+            case AV_PIX_FMT_RGBA64BE:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i]);
+                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+1]);
+                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+2]);
                     }
                 }
             break;
