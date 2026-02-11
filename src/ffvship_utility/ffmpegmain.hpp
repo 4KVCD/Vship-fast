@@ -24,11 +24,11 @@ if (!(condition)) {\
 
 enum class MetricType { SSIMULACRA2, Butteraugli, CVVDP, Unknown };
 
-//only works on 1 byte or even bytes, T must be unsigned
+//only works on powers of 2 bytes, T must be unsigned
 template<typename T>
 constexpr static T reverseBits(T a){
     T mask = (1llu << sizeof(T)*8) - (1llu << (sizeof(T)*4));
-    int size = sizeof(T)*4;
+    uint size = sizeof(T)*4;
     while (size > 1){
         a = ((a & mask) >> size) | ((a & (~mask)) << size);
         mask = (mask)^(mask >> (size/2));
