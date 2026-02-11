@@ -26,11 +26,13 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
             out.subsampling.subw = 1;
             out.subsampling.subh = 0;
         break;
+        /*
         case AV_PIX_FMT_Y216LE:
             out.sample = Vship_SampleUINT16;
             out.subsampling.subw = 1;
             out.subsampling.subh = 0;
         break;
+        */
         case AV_PIX_FMT_YUVA444P:
         case AV_PIX_FMT_YUV444P:
             out.sample = Vship_SampleUINT8;

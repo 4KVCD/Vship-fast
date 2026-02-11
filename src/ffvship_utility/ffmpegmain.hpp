@@ -452,6 +452,7 @@ class BasicConverterProcessor {
             planeSizeUnpack[2] = unpack_stride[2]*height;
             break;
 
+            /*
             //bitdepth 16, 422
             case AV_PIX_FMT_Y216LE:
             unpack_stride[0] = width*2;
@@ -462,6 +463,7 @@ class BasicConverterProcessor {
             planeSizeUnpack[1] = unpack_stride[1]*height;
             planeSizeUnpack[2] = unpack_stride[2]*height;
             break;
+            */
 
             //bitdepth 8, 444
             case AV_PIX_FMT_RGB24:
@@ -514,6 +516,7 @@ class BasicConverterProcessor {
             return;
         }
         switch (src_pixfmt){
+            /*
             case AV_PIX_FMT_Y216LE:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width/2; i++){
@@ -528,6 +531,7 @@ class BasicConverterProcessor {
                     }
                 }
             break;
+            */
             case AV_PIX_FMT_YUYV422:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width/2; i++){
