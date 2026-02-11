@@ -40,7 +40,7 @@ public:
         int fourrier_size = size/2 + 1; //only uses real FT
         
         std::vector<float> freq(fourrier_size);
-        for (int i = 0; i < fourrier_size; i++) freq[i] = fps*i/2;
+        for (int i = 0; i < fourrier_size; i++) freq[i] = fps*i/(2*fourrier_size);
 
         //Y sustained, rg sustained, yv sustained, Y transient
         std::vector<float> filters_fftdomain[4];
