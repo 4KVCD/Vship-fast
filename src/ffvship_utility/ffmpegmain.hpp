@@ -31,7 +31,8 @@ constexpr static T reverseBits(T a){
     uint size = sizeof(T)*4;
     while (size > 1){
         a = ((a & mask) >> size) | ((a & (~mask)) << size);
-        mask = (mask)^(mask >> (size/2));
+        size >>= 1;
+        mask = (mask)^(mask >> (size));
     }
     return a;
 }
