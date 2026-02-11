@@ -24,6 +24,18 @@ if (!(condition)) {\
 
 enum class MetricType { SSIMULACRA2, Butteraugli, CVVDP, Unknown };
 
+//only works on 1 byte or even bytes, T must be unsigned
+template<typename T>
+constexpr static T reverseBits(T a){
+    T mask = (1llu << sizeof(T)*8) - (1llu << (sizeof(T)*4));
+    int size = sizeof(T)*4;
+    while (size > 1){
+        a = ((a & mask) >> size) | ((a & (~mask)) << size);
+        mask = (mask)^(mask >> (size/2));
+    }
+    return a;
+}
+
 struct MetricParameters{
     //general
     int gpu_id = 0;
@@ -563,18 +575,18 @@ class BasicConverterProcessor {
             case AV_PIX_FMT_RGB48BE:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width; i++){
-                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i]);
-                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+1]);
-                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+2]);
+                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i]);
+                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+1]);
+                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[3*i+2]);
                     }
                 }
             break;
             case AV_PIX_FMT_RGBA64BE:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width; i++){
-                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i]);
-                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+1]);
-                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = std::byteswap(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+2]);
+                        ((uint16_t*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i]);
+                        ((uint16_t*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+1]);
+                        ((uint16_t*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = reverseBits(((uint16_t*)(src->Data[0]+j*src->Linesize[0]))[4*i+2]);
                     }
                 }
             break;
