@@ -4,7 +4,7 @@ void loadGaussianKernel(float* gaussiankernel, float* gaussiankernel_integral, i
     double acc = 0;
     gaussiankernel_integral[0] = 0;
     for (int i = 0; i <= 2*gaussiansize; i++){
-        double val = std::exp(-(gaussiansize-i)*(gaussiansize-i)/(2*sigma*sigma))/(std::sqrt(2*M_PI*sigma*sigma));
+        double val = std::exp(-(gaussiansize-i)*(gaussiansize-i)/(2*sigma*sigma))/(std::sqrt(TAU*sigma*sigma));
         gaussiankernel[i] = val;
         acc += val;
         gaussiankernel_integral[i+1] = acc;
