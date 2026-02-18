@@ -8,6 +8,8 @@
 #include <queue>
 #include <stdexcept>
 #include <vector>
+#include <set>
+#include <iostream>
 
 #ifndef ASSERT_WITH_MESSAGE
 #define ASSERT_WITH_MESSAGE(condition, message)                                \

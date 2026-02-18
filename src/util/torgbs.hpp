@@ -3,8 +3,6 @@
 #ifndef TORGBSH
 #define TORGBSH
 
-#include "../util/preprocessor.hpp"
-
 VSNode * toRGBS(VSNode * source, VSCore *core, const VSAPI *vsapi, bool mode16bit = false){
     const VSVideoInfo *vi = vsapi->getVideoInfo(source);
 

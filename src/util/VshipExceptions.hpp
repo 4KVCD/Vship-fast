@@ -116,8 +116,4 @@ public:
     }
 };
 
-#define GPU_CHECK(x)\
-{hipError_t err_hip = x;\
-if (err_hip != hipSuccess) throw VshipError(HIPError, __FILE__, __LINE__, hipGetErrorString(err_hip));}
-
 #endif

@@ -12,10 +12,12 @@ metrics with SSIMULACRA2, Butteraugli & CVVDP.
 - **Butteraugli**: Google's psychovisual image difference metric from libjxl
 - **CVVDP**: University of Cambridge's psychovisual video quality metric
 
-The plugin uses HIP/CUDA for GPU acceleration, providing significant performance
+The plugin uses HIP/CUDA or Vulkan for GPU acceleration, providing significant performance
 improvements over CPU implementations. It can be used with a simple binary (FFVship), as a vapoursynth plugin and has a C API.
 
 There are precompiled binaries ready to be used in the release section.
+
+/!\ VulkanVship is very new and experimental, it tends to be slower.
 
 ## Projects Featuring Vship
 
@@ -46,7 +48,15 @@ For compiling on Windows, see [FFVship Windows Compilation](./doc/FFVship-Window
 For all build options the following are required:
 
 - `make`
+
+To build the HIP/Cuda version
+
 - `hipcc` (AMD HIP SDK) or `nvcc` (NVIDIA CUDA SDK)
+
+To build the Vulkan version
+
+- Vulkan SDK (vulkan header + lib)
+- `slangc` if rebuilding spv code is intended
 
 Additionally, to build the FFvship cli tool:
 
@@ -63,6 +73,10 @@ make buildcuda     # Build for the current systems Nvidia gpu
 make buildcudaall  # Build for all supported Nvidia gpus
 make build         # Build for the current systems AMD gpu
 make buildall      # Build for all supported AMD gpus
+
+make shaderBuild   # Force shader rebuild, requires slangc (optional)
+make buildVulkan   # Build release vulkan vship
+make debugVulkan   # Build Vulkan Vship with debugging symbols and validation layers
 
 #FFVship CLI linux tool build (requires libvship built before FFVSHIP)
 make buildFFVSHIP
