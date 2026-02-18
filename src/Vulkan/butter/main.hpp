@@ -185,7 +185,7 @@ public:
         //memory allocations
         size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
         size_t tempSizeConverter2 = converter2.getTempMemoryNeeded();
-        mem_d = deviceHelper->device.mallocDevice(sizeof(float)*width*height*(6) + std::max(sizeof(float)*width*height*(25), tempSizeConverter1+tempSizeConverter2));
+        mem_d = deviceHelper->device.mallocDevice(sizeof(float)*width*height*(6) + std::max(sizeof(float)*width*height*(25), (uint64_t)(tempSizeConverter1+tempSizeConverter2)));
 
         //initial color planes
         VkDeviceAddress src1_d[3] = {mem_d, mem_d+sizeof(float)*width*height, mem_d+sizeof(float)*2*width*height};
