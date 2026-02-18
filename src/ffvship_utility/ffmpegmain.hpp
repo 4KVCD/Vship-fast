@@ -479,6 +479,7 @@ class BasicConverterProcessor {
             */
 
             //bitdepth 8, 444
+            case AV_PIX_FMT_BGR24:
             case AV_PIX_FMT_RGB24:
             case AV_PIX_FMT_ARGB:
             case AV_PIX_FMT_RGBA:
@@ -609,7 +610,15 @@ class BasicConverterProcessor {
                     }
                 }
             break;
-
+            case AV_PIX_FMT_BGR24:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        unpack_buffer[0][j*unpack_stride[2]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+3*i];
+                        unpack_buffer[1][j*unpack_stride[1]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+3*i+1];
+                        unpack_buffer[2][j*unpack_stride[0]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+3*i+2];
+                    }
+                }
+            break;
             case AV_PIX_FMT_RGB24:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width; i++){

@@ -185,6 +185,7 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
         case AV_PIX_FMT_RGB48LE:
         case AV_PIX_FMT_RGBA64LE:
             out.sample = Vship_SampleUINT16;
+        case AV_PIX_FMT_BGR24:
         case AV_PIX_FMT_RGB24:
         case AV_PIX_FMT_RGBA:
         case AV_PIX_FMT_ARGB:
