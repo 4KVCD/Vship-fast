@@ -18,7 +18,11 @@ ifeq ($(OS),Windows_NT)
 	fatbincompressamd := 
 	fatbincompresscuda := 
 else
-	vulkanLink := -lvulkan
+	ifeq ($(VULKAN_SDK), )
+		vulkanLink := -lvulkan
+	else
+		vulkanLink := -I ${VULKAN_SDK}/include -L ${VULKAN_SDK}/Lib -lvulkan
+	endif
     dllend := .so
 	exeend :=
     fpiccuda := -Xcompiler -fPIC
