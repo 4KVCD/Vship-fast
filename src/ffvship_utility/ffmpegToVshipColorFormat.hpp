@@ -200,6 +200,17 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
             out.subsampling.subw = 0;
             out.subsampling.subh = 0;
         break;
+        case AV_PIX_FMT_RGBF32LE:
+        case AV_PIX_FMT_GBRPF32LE:
+            out.colorFamily = Vship_ColorRGB;
+            out.YUVMatrix = Vship_MATRIX_RGB;
+            out.transferFunction = Vship_TRC_sRGB;
+            out.primaries = Vship_PRIMARIES_BT709;
+            out.range = Vship_RangeFull;
+            out.sample = Vship_SampleFLOAT;
+            out.subsampling.subw = 0;
+            out.subsampling.subh = 0;
+        break;
         default:
             std::cerr << "Unhandled LibAV Pixel Format " << (AVPixelFormat)in->EncodedPixelFormat << std::endl;
             return 1;

@@ -508,6 +508,18 @@ class BasicConverterProcessor {
             planeSizeUnpack[2] = unpack_stride[2]*height;
             break;
 
+            //depth 32, 444
+            case AV_PIX_FMT_RGBF32LE:
+            case AV_PIX_FMT_GBRPF32LE:
+            unpack_stride[0] = width*4;
+            unpack_stride[1] = unpack_stride[0];
+            unpack_stride[2] = unpack_stride[0]; //same for both chroma
+
+            planeSizeUnpack[0] = unpack_stride[0]*height;
+            planeSizeUnpack[1] = unpack_stride[1]*height;
+            planeSizeUnpack[2] = unpack_stride[2]*height;
+            break;
+
             default:
                 Vship_Colorspace_t colorspace;
                 ffmpegToVshipFormat(colorspace, frame);
@@ -571,6 +583,24 @@ class BasicConverterProcessor {
                         unpack_buffer[2][j*unpack_stride[2]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+2];
                         //Y
                         unpack_buffer[0][j*unpack_stride[0]+2*i+1] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+3];
+                    }
+                }
+            break;
+            case AV_PIX_FMT_RGBF32LE:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        ((float*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i];
+                        ((float*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+1];
+                        ((float*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+2];
+                    }
+                }
+            break;
+            case AV_PIX_FMT_GBRPF32LE:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        ((float*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+2];
+                        ((float*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i];
+                        ((float*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+1];
                     }
                 }
             break;
