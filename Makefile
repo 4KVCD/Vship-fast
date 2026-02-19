@@ -6,7 +6,7 @@ DESTDIR ?=
 HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx906,gfx801,gfx802,gfx803
 
 ifeq ($(OS),Windows_NT)
-	vulkanLink := -I ${VULKAN_SDK}\include -L ${VULKAN_SDK}\Lib -lvulkan-1
+	vulkanLink := -I "${VULKAN_SDK}\Include" -L "${VULKAN_SDK}\Lib" -lvulkan-1
     dllend := .dll
 	exeend := .exe
     fpiccuda :=
@@ -21,7 +21,7 @@ else
 	ifeq ($(VULKAN_SDK), )
 		vulkanLink := -lvulkan
 	else
-		vulkanLink := -I ${VULKAN_SDK}/include -L ${VULKAN_SDK}/lib -lvulkan
+		vulkanLink := -I "${VULKAN_SDK}/include" -L "${VULKAN_SDK}/lib" -lvulkan
 	endif
     dllend := .so
 	exeend :=
