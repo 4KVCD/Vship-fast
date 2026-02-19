@@ -21,7 +21,7 @@ else
 	ifeq ($(VULKAN_SDK), )
 		vulkanLink := -lvulkan
 	else
-		vulkanLink := -I ${VULKAN_SDK}/include -L ${VULKAN_SDK}/Lib -lvulkan
+		vulkanLink := -I ${VULKAN_SDK}/include -L ${VULKAN_SDK}/lib -lvulkan
 	endif
     dllend := .so
 	exeend :=
