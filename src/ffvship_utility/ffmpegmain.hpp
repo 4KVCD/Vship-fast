@@ -598,9 +598,9 @@ class BasicConverterProcessor {
             case AV_PIX_FMT_GBRPF32LE:
                 for (int j = 0; j < height; j++){
                     for (int i = 0; i < width; i++){
-                        ((float*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+2];
-                        ((float*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i];
-                        ((float*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[3*i+1];
+                        ((float*)(unpack_buffer[0]+j*unpack_stride[0]))[i] = ((float*)(src->Data[2]+j*src->Linesize[2]))[i];
+                        ((float*)(unpack_buffer[1]+j*unpack_stride[1]))[i] = ((float*)(src->Data[0]+j*src->Linesize[0]))[i];
+                        ((float*)(unpack_buffer[2]+j*unpack_stride[2]))[i] = ((float*)(src->Data[1]+j*src->Linesize[1]))[i];
                     }
                 }
             break;
