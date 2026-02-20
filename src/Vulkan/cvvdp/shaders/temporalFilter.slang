@@ -11,7 +11,7 @@ void temporalConvolutionKernel_d(uint3 threadIdx : SV_GroupThreadID, uint3 block
     if (x >= planeSize) return;
 
     if (temporal_size == 1){
-        const float* srcptr = getFramePointer(0, temporalBuffer, width, height, temporal_offset, temporal_size, max_temporal_size);
+        float* srcptr = getFramePointer(0, temporalBuffer, width, height, temporal_offset, temporal_size, max_temporal_size);
         Y_sustained[x] = srcptr[x];
         RG_sustained[x] = srcptr[x+planeSize];
         YV_sustained[x] = srcptr[x+2*planeSize];
