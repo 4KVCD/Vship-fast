@@ -4,8 +4,8 @@ static float sensitivity_correction = -0.2797423303127289;
 
 //src is Lbkg of ref
 public float computeSensitivityGPU(float src, int band, int channel, float* CSFMem_d){
-    const float* LUTx = CSFMem_d;
-    const float* LUTy = CSFMem_d+32*(1+band*4+channel);
+    float* LUTx = CSFMem_d;
+    float* LUTy = CSFMem_d+32*(1+band*4+channel);
     const float x = log10(src);
     float frac = 31*(x - LUTx[0])/(LUTx[31] - LUTx[0]);
     const int imin = (int)frac;
