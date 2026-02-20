@@ -29,7 +29,7 @@ template<typename T>
 constexpr static T reverseBits(T a){
     T mask = (1llu << sizeof(T)*8) - (1llu << (sizeof(T)*4));
     uint size = sizeof(T)*4;
-    while (size > 1){
+    while (size >= 1){
         a = ((a & mask) >> size) | ((a & (~mask)) << size);
         size >>= 1;
         mask = (mask)^(mask >> (size));
