@@ -918,9 +918,9 @@ void printVulkanFeatureMatrix(Vship_VulkanFeatureMatrix& features){
     std::cout << "variablePointers : " << features.variablePointers << std::endl;
     std::cout << "storagePushConstant8 : " << features.storagePushConstant8 << " (not required)" << std::endl;
     std::cout << "storageBuffer8BitAccess : " << features.storageBuffer8BitAccess << std::endl;
-    std::cout << "uniformAndStorageBuffer8BitAccess : " << features.uniformAndStorageBuffer8BitAccess << " (not required)" << std::endl; << std::endl;
+    std::cout << "uniformAndStorageBuffer8BitAccess : " << features.uniformAndStorageBuffer8BitAccess << " (not required)" << std::endl;
     std::cout << "shaderFloat16 : " << features.shaderFloat16 << " (not required in default build)" << std::endl;
-    std::cout << "shaderFloat64 : " << features.shaderFloat64 << " (not required)" << std::endl; << std::endl;
+    std::cout << "shaderFloat64 : " << features.shaderFloat64 << " (not required)" << std::endl;
     std::cout << "shaderInt8 : " << features.shaderInt8 << std::endl;
     std::cout << "shaderInt16 : " << features.shaderInt16 << std::endl;
     std::cout << "shaderInt64 : " << features.shaderInt64 << std::endl;
