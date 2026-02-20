@@ -562,8 +562,9 @@ public:
         pipelineCreateInfo.pNext = NULL;
 
         VkPipeline pipeline = VK_NULL_HANDLE;
-        if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline) != VK_SUCCESS){
-            throw std::runtime_error("Error while creating compute pipeline");
+        VkResult err = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline);
+        if (err != VK_SUCCESS){
+            throw std::runtime_error("Error " + std::to_string(err) + " while creating compute pipeline");
         }
         return pipeline;
     }
