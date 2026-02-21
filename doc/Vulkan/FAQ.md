@@ -5,3 +5,7 @@ Yes! Vulkan Vship is currently not as optimized as the original due to lacking e
 ### Vulkan Vship on Adreno mobile GPU on Termux
 
 2 users were able to make it work, however, it has been found that you need to install `mesa-vulkan-icd-freedreno` as a vulkan driver and not `vulkan-loader-android`. Otherwise you may get crashes on trying to run vship, failing to load some vulkan shaders.
+
+### The vulkan build is not running with weird exception code on windows + intel GPU
+
+It is a known issue right now... It is likely due to drivers and not vship. Especially since it works on Linux.
