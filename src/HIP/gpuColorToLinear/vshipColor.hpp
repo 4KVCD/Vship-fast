@@ -50,6 +50,11 @@ public:
         //int64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
         //int64_t maxHeight= std::max(source_colorspace.target_height, source_colorspace.height);
         
+        if (source_colorspace.YUVMatrix == Vship_MATRIX_RGB) {
+            source_colorspace.colorFamily = Vship_ColorRGB;
+        } else {
+            source_colorspace.colorFamily = Vship_ColorYUV;
+        }
     }
     void destroy(){
     }

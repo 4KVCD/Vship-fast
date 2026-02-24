@@ -67,6 +67,21 @@ float3 inverseMatrixNCL(float3 val, Vship_YUVMatrix_t matrix){
 
             return ncl_yuv_to_rgb_from_kr_kb(val, Kr, Kb);
         }
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO:{
+            float3 out;
+            out.x = val.x + val.y - val.z;
+            out.y = val.x + val.z;
+            out.z = val.x - val.y - val.z;
+            return out;
+        }
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO_RE:
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO_RO:{
+            float3 out;
+            out.x = val.x + 0.5f*(val.y - val.z);
+            out.y = val.x + 0.5f*val.z;
+            out.z = val.x - 0.5f*(val.y + val.z);
+            return out;
+        }
         case Vship_YUVMatrix_t.Vship_MATRIX_RGB:
         default:{ //unused
             return val;
@@ -100,6 +115,9 @@ float3 inverseMatrixCL(float3 val, Vship_YUVMatrix_t matrix){
 
             return val;
         }
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO:
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO_RE:
+        case Vship_YUVMatrix_t.Vship_MATRIX_YCGCO_RO:
         case Vship_YUVMatrix_t.Vship_MATRIX_BT2020_NCL:
         case Vship_YUVMatrix_t.Vship_MATRIX_BT709:
         case Vship_YUVMatrix_t.Vship_MATRIX_BT470_BG:

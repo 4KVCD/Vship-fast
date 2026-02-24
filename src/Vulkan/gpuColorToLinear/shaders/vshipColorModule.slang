@@ -26,9 +26,12 @@ public enum Vship_YUVMatrix_t{
     Vship_MATRIX_BT709 = 1,
     Vship_MATRIX_BT470_BG = 5,
     Vship_MATRIX_ST170_M = 6, //same as 5
+    Vship_MATRIX_YCGCO = 8,
     Vship_MATRIX_BT2020_NCL = 9,
     Vship_MATRIX_BT2020_CL = 10,
     Vship_MATRIX_BT2100_ICTCP = 14,
+    Vship_MATRIX_YCGCO_RE = 16,
+    Vship_MATRIX_YCGCO_RO = 17,
 };
 
 public enum Vship_TransferFunction_t{

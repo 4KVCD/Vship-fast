@@ -6,8 +6,6 @@ float fullRange(Vship_Sample_t sampleType, Vship_Range_t range, bool ColorFamchr
         float normalization = (1 << bitdepth) - 1; //float and half get 1
         //put in range [0, 1]
         a /= normalization;
-        //if UV -> -0.5
-        if (ColorFamchromaPlane) a -= 0.5f;
         return a;
     } else {
         //limited

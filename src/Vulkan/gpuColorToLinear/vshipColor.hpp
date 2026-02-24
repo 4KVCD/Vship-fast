@@ -98,6 +98,12 @@ public:
             intermediatePlanes[1] = intermediatePlanes[0]+sizeof(float)*width*height;
             intermediatePlanes[2] = intermediatePlanes[1]+sizeof(float)*width*height;
         }
+
+        if (colorspace.YUVMatrix == Vship_MATRIX_RGB) {
+            colorspace.colorFamily = Vship_ColorRGB;
+        } else {
+            colorspace.colorFamily = Vship_ColorYUV;
+        }
     }
     void destroy(){
         if (isResized || isCropped){

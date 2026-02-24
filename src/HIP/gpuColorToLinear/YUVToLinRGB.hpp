@@ -85,7 +85,7 @@ __device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_BT2020_CL>(float3 
     const float vscale = 0.5f/(1.f-Kr);
 
     float3 res;
-    res.x = (val.z + val.x * vscale)/(vscale*Kr + 0.5f);
+    res.x = (val.z+ val.x * vscale)/(vscale*Kr + 0.5f);
     res.z = (val.y + val.x * uscale)/(uscale*Kb + 0.5f);
     res.y = val.x;
 
@@ -97,7 +97,6 @@ template <>
 __device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_BT709>(float3 val){
     constexpr float Kr = 0.2126f;
     constexpr float Kb = 0.0722f;
-
     return ncl_yuv_to_rgb_from_kr_kb(val, Kr, Kb);
 }
 
@@ -111,7 +110,6 @@ template <>
 __device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_BT470_BG>(float3 val){
     constexpr float Kr = 0.299f;
     constexpr float Kb = 0.114f;
-
     return ncl_yuv_to_rgb_from_kr_kb(val, Kr, Kb);
 }
 
@@ -135,12 +133,52 @@ template <>
 __device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_BT2020_NCL>(float3 val){
     constexpr float Kr = 0.2627f;
     constexpr float Kb = 0.0593f;
-
     return ncl_yuv_to_rgb_from_kr_kb(val, Kr, Kb);
 }
 
 template <>
 __device__ float3 inline linearLightYUVConversion<Vship_MATRIX_BT2020_NCL>(float3 val){
+    return val;
+}
+
+//source https://en.wikipedia.org/wiki/YCoCg
+template <>
+__device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_YCGCO>(float3 val){
+    float3 out;
+    out.x = val.x + val.y - val.z;
+    out.y = val.x + val.z;
+    out.z = val.x - val.y - val.z;
+    return out;
+}
+
+template <>
+__device__ float3 inline linearLightYUVConversion<Vship_MATRIX_YCGCO>(float3 val){
+    return val;
+}
+
+//source https://en.wikipedia.org/wiki/YCoCg
+template <>
+__device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_YCGCO_RE>(float3 val){
+    float3 out;
+    out.x = val.x + 0.5f*(val.y - val.z);
+    out.y = val.x + 0.5f*val.z;
+    out.z = val.x - 0.5f*(val.y + val.z);
+    return out;
+}
+
+template <>
+__device__ float3 inline linearLightYUVConversion<Vship_MATRIX_YCGCO_RE>(float3 val){
+    return val;
+}
+
+//source https://en.wikipedia.org/wiki/YCoCg
+template <>
+__device__ float3 inline gammaLightYUVConversion<Vship_MATRIX_YCGCO_RO>(float3 val){
+    return gammaLightYUVConversion<Vship_MATRIX_YCGCO_RE>(val);
+}
+
+template <>
+__device__ float3 inline linearLightYUVConversion<Vship_MATRIX_YCGCO_RO>(float3 val){
     return val;
 }
 
@@ -203,6 +241,9 @@ void YUVToLinRGBPipeline_templateTransfer(float* p0, float* p1, float* p2, int64
         case Vship_MATRIX_ST170_M:
             YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_ST170_M, transfer>(p0, p1, p2, width, stream);
             break;
+        case Vship_MATRIX_YCGCO:
+            YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_YCGCO, transfer>(p0, p1, p2, width, stream);
+            break;
         case Vship_MATRIX_BT2020_NCL:
             YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_BT2020_NCL, transfer>(p0, p1, p2, width, stream);
             break;
@@ -211,6 +252,12 @@ void YUVToLinRGBPipeline_templateTransfer(float* p0, float* p1, float* p2, int64
             break;
         case Vship_MATRIX_BT2100_ICTCP:
             YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_BT2100_ICTCP, transfer>(p0, p1, p2, width, stream);
+            break;
+        case Vship_MATRIX_YCGCO_RE:
+            YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_YCGCO_RE, transfer>(p0, p1, p2, width, stream);
+            break;
+        case Vship_MATRIX_YCGCO_RO:
+            YUVToLinRGBPipeline_alltemplate<Vship_MATRIX_YCGCO_RO, transfer>(p0, p1, p2, width, stream);
             break;
     }
 }

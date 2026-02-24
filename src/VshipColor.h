@@ -32,6 +32,7 @@ typedef enum Vship_ChromaLocation_t{
     Vship_ChromaLoc_Top = 3,
 } Vship_ChromaLocation_t;
 
+//deprecated arguments, unused
 typedef enum Vship_ColorFamily_t{
     Vship_ColorYUV,
     Vship_ColorRGB,
@@ -42,9 +43,12 @@ typedef enum Vship_YUVMatrix_t{
     Vship_MATRIX_BT709 = 1,
     Vship_MATRIX_BT470_BG = 5,
     Vship_MATRIX_ST170_M = 6, //same as 5
+    Vship_MATRIX_YCGCO = 8,
     Vship_MATRIX_BT2020_NCL = 9,
     Vship_MATRIX_BT2020_CL = 10,
     Vship_MATRIX_BT2100_ICTCP = 14,
+    Vship_MATRIX_YCGCO_RE = 16,
+    Vship_MATRIX_YCGCO_RO = 17,
 } Vship_YUVMatrix_t;
 
 typedef enum Vship_TransferFunction_t{
@@ -89,7 +93,7 @@ typedef struct Vship_Colorspace_t {
     Vship_Range_t range;// = Vship_RangeLimited;
     Vship_ChromaSubsample_t subsampling;// = {1, 1};
     Vship_ChromaLocation_t chromaLocation;// = Vship_ChromaLoc_Left;
-    Vship_ColorFamily_t colorFamily;// = Vship_ColorYUV;
+    Vship_ColorFamily_t colorFamily;// now unused, matrix 0 is RGB and others are YUV
     Vship_YUVMatrix_t YUVMatrix;// = Vship_MATRIX_BT709;
     Vship_TransferFunction_t transferFunction;// = Vship_TRC_BT709;
     Vship_Primaries_t primaries;// = Vship_PRIMARIES_BT709;

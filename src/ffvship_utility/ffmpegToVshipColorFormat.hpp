@@ -275,10 +275,10 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
         case AVCOL_SPC_SMPTE240M:    
             out.matrix_coefficients = ZIMG_MATRIX_ST240_M;                 
             break;
-        case AVCOL_SPC_YCGCO:    
-            out.matrix_coefficients = ZIMG_MATRIX_YCGCO;                   
-            break;
         */
+        case AVCOL_SPC_YCGCO:    
+            out.YUVMatrix = Vship_MATRIX_YCGCO;
+            break;
         case AVCOL_SPC_BT2020_NCL:    
             out.YUVMatrix = Vship_MATRIX_BT2020_NCL;
             break;
@@ -299,6 +299,12 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
         //    out.matrix_coefficients = ZIMG_MATRIX_BT2100_ICTCP;            
         //    break;
         */
+        case AVCOL_SPC_YCGCO_RE: 
+            out.YUVMatrix = Vship_MATRIX_YCGCO_RE;
+            break;
+        case AVCOL_SPC_YCGCO_RO: 
+            out.YUVMatrix = Vship_MATRIX_YCGCO_RO;
+            break;
         default:
             std::cerr << "Unhandled LibAV YUV color matrix: " << in->ColorSpace << std::endl;
             return 1;

@@ -28,8 +28,6 @@ __device__ float inline FullRange(float a){
         constexpr float normalization = (1 << bitdepth) - 1; //float and half get 1
         //put in range [0, 1]
         a /= normalization;
-        //if UV -> -0.5
-        if constexpr (ColorFamchromaPlane) a -= 0.5f;
         return a;
     } else {
         //limited
