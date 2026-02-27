@@ -250,3 +250,10 @@ Special thanks to dnjulek for the Zig-based SSIMULACRA2 implementation in
 
 This project is licensed under the MIT license. License information is provided
 by the [LICENSE](LICENSE).
+
+## Visitor Count
+
+<div align="center">
+  <img alt="Visitor Stats" 
+    src="https://widgetbite.com/stats/Line-fr"/>  
+</div>
