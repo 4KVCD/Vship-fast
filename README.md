@@ -55,7 +55,7 @@ To build the HIP/Cuda version
 
 To build the Vulkan version
 
-- Vulkan SDK (vulkan header + lib)
+- Vulkan SDK (vulkan header + lib) (ideally [LunarG](https://vulkan.lunarg.com/sdk/home))
 - `slangc` if rebuilding spv code is intended
 
 Additionally, to build the FFvship cli tool:
@@ -213,20 +213,38 @@ Testing Clip: 1080p 1339 frames
 SSIMU2 Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 115s
-VSZIP | CPU | 68s
-Vapoursynth Vship | GPU | 25s
-FFVship | GPU | 9s
+VSZIP | CPU | 71.748s
+fssimu2 | CPU | 79.706s
+ssimulacra2_rs | CPU | X s
+Cuda | --- | ---
+Vapoursynth Vship | GPU | 11.431s
+FFVship | GPU | 9.121s
+Vulkan | --- | ---
+Vapoursynth Vship | GPU | 16.046s
+FFVship | GPU | 11.252s
 
 Butteraugli Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 239s
-Vapoursynth Vship | GPU | 47s
-FFVship | GPU | 37s
+Cuda | --- | ---
+Vapoursynth Vship | GPU | 39.528s
+FFVship | GPU | 38.710s
+Vulkan | --- | ---
+Vapoursynth Vship | GPU | 47.961s
+FFVship | GPU | 41.484s
 
 CVVDP Implementation | HW Type | Score | Time
 --- | --- | --- | ---
-Original Repo | GPU | 9.4808 | 162s
-FFVship | GPU | 9.52268 | 22s
+Original Repo | CPU | 1632s
+FFVship (Vulkan llvmPipe) | CPU | 499s
+fcvvdp | CPU | 360.893s
+Original Repo | GPU | 162s
+Cuda | --- | ---
+Vapoursynth Vship | GPU | 28.558s
+FFVship | GPU | 23.197s
+Vulkan | --- | ---
+Vapoursynth Vship | GPU | 53.750s
+FFVship | GPU | 41.297s
 
 
 `vship` dramatically outperforms CPU-based and GPU-based implementations of these metrics
@@ -250,10 +268,3 @@ Special thanks to dnjulek for the Zig-based SSIMULACRA2 implementation in
 
 This project is licensed under the MIT license. License information is provided
 by the [LICENSE](LICENSE).
-
-## Visitor Count
-
-<div align="center">
-  <img alt="Visitor Stats" 
-    src="https://widgetbite.com/stats/Line-fr"/>  
-</div>
