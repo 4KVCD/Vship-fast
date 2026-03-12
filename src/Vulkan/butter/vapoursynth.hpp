@@ -106,7 +106,7 @@ namespace butter{
         for (int i = 0; i < d->streamnum; i++){
             d->butterStreams[i].destroy();
         }
-        free(d->butterStreams);
+        delete[] d->butterStreams;
         delete d->streamSet;
     
         free(d);
@@ -207,7 +207,7 @@ namespace butter{
         src_colorspace.primaries = Vship_PRIMARIES_BT709;
 
         try{
-            data->butterStreams = (ButterComputingImplementation*)malloc(sizeof(ButterComputingImplementation)*d.streamnum);
+            data->butterStreams = new ButterComputingImplementation [d.streamnum];
             if (data->butterStreams == NULL) throw VshipError(OutOfRAM, __FILE__, __LINE__);
             for (int i = 0; i < d.streamnum; i++){
                 data->butterStreams[i].init(src_colorspace, src_colorspace, gpuid, Qnorm, intensity_multiplier);
