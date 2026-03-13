@@ -214,7 +214,7 @@ SSIMU2 Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 115s
 VSZIP | CPU | 71.748s
-fssimu2 | CPU | 79.706s
+fssimu2 | CPU | 60.222s
 ssimulacra2_rs | CPU | X s
 Cuda | --- | ---
 Vapoursynth Vship | GPU | 11.431s
