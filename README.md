@@ -195,7 +195,14 @@ dist = core.bs.VideoSource("distorted.mp4")
 result = ref.vship.CVVDP(dist, distmap = 0, model_name = "standard_fhd", resizeToDisplay = 0)
 
 # Extract scores from frame properties
-scores = [frame.props["_CVVDP"] for frame in result.frames()]
+
+#wrong if temporal behavior is enabled since this method may not process frames in order
+#scores = [frame.props["_CVVDP"] for frame in result.frames()]
+
+#correct is:
+scores = []
+for i in range(len(result)):
+  scores.append(result.get_frame(i).props["_CVVDP"])
 
 # Only use the last score of CVVDP. (it takes into account every frame that it has seen up to now)
 #it is different because it is an actually temporal metric unlike others
