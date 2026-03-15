@@ -266,7 +266,7 @@ class FFMSIndexResult {
                             ("FFMS2: Failed to index file [" + input_file_path +
                             "] - " + error_message_buffer)
                                 .c_str());
-            
+
             if (show_progress){
                 prog->refresh(true);
                 delete prog;
@@ -400,7 +400,7 @@ class FFMSFrameReader {
         total_frame_count = video_properties->NumFrames;
         ASSERT_WITH_MESSAGE(total_frame_count > 0,
                             "FFMS2: No frames found in video stream.");
-        
+
         fps = (float)video_properties->FPSNumerator / (float)video_properties->FPSDenominator;
     }
 
@@ -758,7 +758,7 @@ void printColorspace(Vship_Colorspace_t colorspace){
     std::cout << "Resize To: " << colorspace.target_width << "x" << colorspace.target_height << std::endl;
     std::cout << "Cropped by (Top/Bottom/Left/Right): " << colorspace.crop.top << "/" << colorspace.crop.bottom << "/" << colorspace.crop.left << "/" << colorspace.crop.right << std::endl;
     std::cout << "=> Converted Size: ";
-    if (colorspace.target_width != -1){ 
+    if (colorspace.target_width != -1){
         std::cout << colorspace.target_width-colorspace.crop.right-colorspace.crop.left;
     } else {
         std::cout << colorspace.width-colorspace.crop.right-colorspace.crop.left;
@@ -947,6 +947,7 @@ struct CommandLineOptions {
     std::string source_file;
     std::string encoded_file;
     std::string json_output_file;
+    std::string svg_output_file;
     std::string source_index;
     std::string encoded_index;
 
@@ -1030,6 +1031,7 @@ CommandLineOptions parse_command_line_arguments(int argc, char **argv) {
     parser.add_flag({"--encoded", "-e"}, &opts.encoded_file, "Distorted encode of the source", true);
     parser.add_flag({"--metric", "-m"}, &metric_name, "Which metric to use [SSIMULACRA2, Butteraugli, CVVDP]");
     parser.add_flag({"--json"}, &opts.json_output_file, "Outputs metric results to a json file");
+    parser.add_flag({"--svg"}, &opts.svg_output_file, "Outputs metric results to a svg file as a graph");
     parser.add_flag({"--live-score-output"}, &opts.live_index_score_output, "replace stdout output with index-score lines");
     parser.add_flag({"--source-index"}, &opts.source_index, "FFMS2 index file for source video");
     parser.add_flag({"--encoded-index"}, &opts.encoded_index, "FFMS2 index file for encoded video");
@@ -1041,7 +1043,7 @@ CommandLineOptions parse_command_line_arguments(int argc, char **argv) {
     parser.add_flag({"--every"}, &opts.every_nth_frame, "Frame sampling rate");
     parser.add_flag({"--source-indices"}, &source_indices_str, "List of source indices subjective to --start, --end, --every and --encoded-offset. If --encoded-indices isnt specified, this will be applied to encoded-indices too. Format is integers separated by comma");
     parser.add_flag({"--encoded-indices"}, &encoded_indices_str, "List of encoded indices subjective to --start, --end, --every and --encoded-offset. Format is integers separated by comma");
-    
+
     parser.add_flag({"--cropTopSource"}, &opts.cropSource.top, "Allows to crop source");
     parser.add_flag({"--cropBottomSource"}, &opts.cropSource.bottom, "Allows to crop source");
     parser.add_flag({"--cropLeftSource"}, &opts.cropSource.left, "Allows to crop source");
