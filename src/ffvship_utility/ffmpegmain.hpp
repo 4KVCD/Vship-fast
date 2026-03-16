@@ -1108,3 +1108,185 @@ CommandLineOptions parse_command_line_arguments(int argc, char **argv) {
 
     return opts;
 }
+
+const double jod_a = 0.0439569391310215;
+const double jod_exp = 0.9302042722702026;
+double inverse_JOD(double a){
+    return std::pow((10-a)/jod_a,1/jod_exp);
+}
+double JOD(double a){
+    return 10. - jod_a * std::pow(a,jod_exp);
+}
+
+int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& source_scores) {
+    if (cli_args.metric == MetricType::Unknown) {
+        return 1;
+    }
+
+    float max_value = -10000000.f;
+    float min_value = 10000000.f;
+    std::vector<double> scores(source_scores.size());
+    if (cli_args.metric != MetricType::CVVDP){
+        scores = source_scores;
+    } else {
+        //we need to hack cvvdp output scoring to make it per frame
+        //first step is inverse JOD + reverse norm2 beginning
+        for (int64_t i = 0; i  < source_scores.size(); i++){
+            const float Qval = inverse_JOD(source_scores[i]);
+            scores[i] = Qval*Qval*(i+1);
+        }
+        //then reverse pooling (less accurate step on long clips)
+        for (int64_t i = source_scores.size()-1; i > 0; i--){
+            scores[i] = JOD(std::sqrt(scores[i]-scores[i-1]));
+        }
+        scores[0] = JOD(std::sqrt(scores[0]));
+    }
+    for (int64_t i = 0; i < source_scores.size(); i++){
+        max_value = std::max(max_value, (float)scores[i]);
+        min_value = std::min(min_value, (float)scores[i]);
+    }
+
+    const int length = 1920;
+    const float lengthf = static_cast<float>(length);
+    const int height = 1080;
+    const float heightf = static_cast<float>(height);
+    const int padding = 50;
+    const int svg_length = length + padding * 2;
+    const int svg_height = height + padding * 2;
+
+    int nbr_scores = 0;
+    switch (cli_args.metric) {
+        case MetricType::Butteraugli:
+            nbr_scores = scores.size() / 3;
+            break;
+        default:
+            nbr_scores = scores.size();
+            break;
+    }
+
+    std::ofstream svgfile(cli_args.svg_output_file, std::ios_base::out);
+    if (!svgfile) {
+      std::cerr << "Failed to open svg output file" << std::endl;
+      return 1;
+    }
+
+    // set precision
+    svgfile << std::setprecision(8);
+
+    // SVG Header
+    svgfile << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n";
+    svgfile << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
+
+    // Area of the (whole) SVG file
+    svgfile << "<svg width=\"" << svg_length << "\" height=\"" << svg_height
+            << "\" viewBox=\"" << -padding << " " << -padding << " " << svg_length
+            << " " << svg_height
+            << "\" xmlns=\"http://www.w3.org/2000/svg\" "
+               "xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n";
+    svgfile << "<rect x=\"" << -padding << "\" y=\"" << -padding << "\" width=\""
+            << svg_length << "\" height=\"" << svg_height
+            << "\" rx=\"auto\" ry=\"auto\" fill=\"#FFFFFF\" fill-opacity=\"1\" "
+               "stroke=\"none\" stroke-opacity=\"1\" stroke-width=\"1\" "
+               "opacity=\"1\" />\n";
+
+    // Rectangle delimiting the graph area
+    svgfile << "<rect x=\"0\" y=\"0\" width=\"" << length << "\" height=\""
+            << height
+            << "\" rx=\"auto\" ry=\"auto\" fill=\"none\" fill-opacity=\"1\" "
+                "stroke=\"#000000\" stroke-opacity=\"1\" stroke-width=\"4\" "
+                "opacity=\"1\" />";
+
+    switch (cli_args.metric) {
+        case MetricType::SSIMULACRA2:
+            max_value = 100.0f;
+            min_value = 100.f-(100.f-min_value)*1.1f; //padding
+            break;
+        case MetricType::CVVDP:
+            max_value = 10.0f;
+            min_value = 10.f-(10.f-min_value)*1.1f; //padding
+            break;
+        case MetricType::Butteraugli:
+            min_value = 0.0f;
+            max_value = max_value*1.1f; //padding
+            break;
+        default:
+            return 1;
+    }
+
+    const int nbr_lines = 20;
+    const int nbr_column = std::min(20, nbr_scores);
+    for (int i = 0; i < nbr_lines; i++) { // Drawing the horizontal
+        const float i_float = static_cast<float>(i);
+        const float y = heightf - heightf * i / (nbr_lines-1);
+        // y-coordinate lines (score)
+        svgfile << "<line x1=\"0\" y1=\"" << y << "\" x2=\"" << length << "\" y2=\""
+                << y
+                << "\" stroke=\"#000000\" stroke-opacity=\"1\" stroke-width=\"2\" "
+                   "stroke-linecap=\"butt\" opacity=\"0.2\" />\n";
+
+        // y-coordinate texts (score)
+        svgfile << "<text x=\"-10\" y=\"" << y
+                << "\" dx=\"0\" dy=\"0\" textLength=\"none\" fill=\"#000000\" "
+                   "fill-opacity=\"1\" stroke=\"none\" stroke-opacity=\"1\" "
+                   "stroke-width=\"1\" opacity=\"1\" font-family=\"sans-serif\" "
+                   "font-size=\"10px\" font-weight=\"normal\" text-anchor=\"end\" "
+                   "dominant-baseline=\"middle\" >"
+                << std::setprecision(4) << i_float * (max_value-min_value) / (nbr_lines-1) + min_value << "</text>";
+        svgfile << std::setprecision(8);
+    }
+    
+    for (int i = 0; i < nbr_column; i++){
+        const float i_float = static_cast<float>(i);
+        const float x = lengthf * i / (nbr_column-1);
+        // x-coordinate lines (frame number)
+        svgfile << "<line x1=\"" << x << "\" y1=\"0\" x2=\"" << x << "\" y2=\""
+                << height
+                << "\" stroke=\"#000000\" stroke-opacity=\"1\" stroke-width=\"2\" "
+                   "stroke-linecap=\"butt\" opacity=\"0.2\" />";
+
+        const int frame_nbr = static_cast<int>(i_float / static_cast<float>(nbr_column) * static_cast<float>(nbr_scores)) * cli_args.every_nth_frame;
+        // x-coordinate texts (frame number)
+        svgfile << "<text x=\"" << x << "\" y=\"" << height + 10
+                << "\" dx=\"0\" dy=\"0\" textLength=\"none\" "
+                   "fill=\"#000000\" fill-opacity=\"1\" stroke=\"none\" "
+                   "stroke-opacity=\"1\" stroke-width=\"1\" opacity=\"1\" "
+                   "font-family=\"sans-serif\" font-size=\"10px\" "
+                   "font-weight=\"normal\" text-anchor=\"middle\" "
+                   "dominant-baseline=\"hanging\" >"
+                << frame_nbr << "</text>";
+    }
+
+    // Function to output graph to svg, needed because Butteraugli has 3 value per frame
+    auto write_graph = [&](int stride, int shift, std::string color) {
+      svgfile << "<polyline points=\"0 " << height << " "; // Insert max value to draw the graph from top to bottom
+
+      for (int i = 0; i < nbr_scores; i++) {
+        const float score = static_cast<float>(scores[i * stride + shift]);
+        const float x = lengthf * (i / static_cast<float>(nbr_scores-1));
+        const float y = (1.0f - ((score-min_value) / (max_value-min_value))) * heightf;
+        svgfile << x << " " << y << " ";
+      }
+
+      svgfile << length << " "
+              << height // Insert min value to draw the graph from top to bottom
+              << "\" fill=\"" << color << "\" fill-opacity=\"0.5\" stroke=\""
+              << color
+              << "\" "
+                 "stroke-opacity=\"1\" stroke-width=\"2\" opacity=\"1\" />";
+    };
+
+    // Score graph
+    if (cli_args.metric == MetricType::SSIMULACRA2 || cli_args.metric == MetricType::CVVDP) {
+        write_graph(1, 0, "#0000AA");
+    } else if (cli_args.metric == MetricType::Butteraugli) {
+        write_graph(3, 0, "#0000AA");
+        write_graph(3, 1, "#00AA00");
+        write_graph(3, 2, "#AA0000");
+    } else {
+        return 1;
+    }
+
+    svgfile << "</svg>";
+
+    return 0;
+}
