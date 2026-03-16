@@ -36,33 +36,33 @@ void placeMergeChromaNorm(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBu
 
 //we should have D values in Lpyr bands and channels.
 //Lbkg planes will serve as a buffer and the final result willl be in Lbkg band 0
-void placeGetDistMap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, LpyrManager& Lpyr){
+void placeGetDistMap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress res[4], std::vector<int64_t> bandOffsets, int64_t width, int64_t height, int levels){
     //first step is merging chroma planes
-    for (int band = 0; band < Lpyr.getSize(); band++){
-        const auto [w, h] = Lpyr.getResolution(band);
-        if (band == 0 || band == Lpyr.getSize()-1){
-            placeMergeChromaNorm(deviceHelper, cmdBuff, Lpyr.getContrast(0, band), Lpyr.getContrast(1, band), Lpyr.getContrast(2, band), Lpyr.getContrast(3, band), w*h, 1);
+    int64_t w = width;
+    int64_t h = height;
+    for (int band = 0; band < levels; band++){
+        if (band == 0 || band == levels-1){
+            placeMergeChromaNorm(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], w*h, 1);
         } else {
-            placeMergeChromaNorm(deviceHelper, cmdBuff, Lpyr.getContrast(0, band), Lpyr.getContrast(1, band), Lpyr.getContrast(2, band), Lpyr.getContrast(3, band), w*h, 2);
+            placeMergeChromaNorm(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], w*h, 2);
         }
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
     //reconstruction
-    for (int band = Lpyr.getSize()-2; band >= 0; band--){
-        const auto [w, h] = Lpyr.getResolution(band);
-        placeGaussPyrExpand<false, true, false>(deviceHelper, cmdBuff, Lpyr.getContrast(0, band), Lpyr.getContrast(0, band+1), w, h);
+    w = width;
+    h = height;
+    for (int band = levels-2; band >= 0; band--){
+        placeGaussPyrExpand<false, true, false>(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[0]+bandOffsets[band+1], w, h);
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
-    const auto [w0, h0] = Lpyr.getResolution(0);
-    deviceHelper->device.memCpyDtoD(cmdBuff, Lpyr.getLbkg(0), Lpyr.getContrast(0, 0), sizeof(float)*w0*h0);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {Lpyr.getLbkg(0), w0*h0*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {Lpyr.getContrast(0, 0), w0*h0*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
-    });
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["distmap_specificsCVVDP.spv:JODIZE"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, Lpyr.getLbkg(0), (int64_t)(w0*h0));
-    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (w0*h0+255)/256, 1, 1);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {{Lpyr.getLbkg(0), w0*h0*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
+    fillKernelArguments(0, kernelArguments, res[0], (int64_t)(width*height));
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (width*height+255)/256, 1, 1);
+    deviceHelper->device.placeMemoryBarriers(cmdBuff, {{res[0], width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
 }
 
 }

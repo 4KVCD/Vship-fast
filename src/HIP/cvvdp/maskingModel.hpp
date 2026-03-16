@@ -23,7 +23,7 @@ void preGaussianPreCompute(float* Lbkg, float* p1, float* p2, int width, int hei
 
 //works for a band  but does all channels. It writes result on source ref
 //work on 16x16 blocks
-__global__ void computeD_Kernel(float* R0, float* R1, float* R2, float* R3, float* T0, float* T1, float* T2, float* T3, const int width, const int height, GaussianHandle gaussianhandle){
+__global__ void computeD_Kernel(float* out0, float* out1, float* out2, float* out3, float* R0, float* R1, float* R2, float* R3, float* T0, float* T1, float* T2, float* T3, const int width, const int height, GaussianHandle gaussianhandle){
     const int64_t x = (threadIdx.x + blockIdx.x*16);
     const int64_t y = (threadIdx.y + blockIdx.y*16);
     const int64_t id = y*width + x;
@@ -76,36 +76,36 @@ __global__ void computeD_Kernel(float* R0, float* R1, float* R2, float* R3, floa
     const float D3 = max_v*Du3/(max_v+Du3);
 
     //we write D inside Reference planes along with the channel multiplier
-    R0[id] = D0 * 1.f;
-    R1[id] = D1 * ch_chrom_w;
-    R2[id] = D2 * ch_chrom_w;
-    R3[id] = D3 * ch_trans_w;
+    out0[id] = D0 * 1.f;
+    out1[id] = D1 * ch_chrom_w;
+    out2[id] = D2 * ch_chrom_w;
+    out3[id] = D3 * ch_trans_w;
 
     //if (id == 13*1024 + 64 && width == 827) printf("D id/width %lld/%d: %f %f %f %f\n", id, width, D0, D1, D2, D3);
 }
 
-void computeD(float* R0, float* R1, float* R2, float* R3, float* T0, float* T1, float* T2, float* T3, const int width, const int height, GaussianHandle& gaussianhandle, hipStream_t stream){
+void computeD(float* out0, float* out1, float* out2, float* out3, float* R0, float* R1, float* R2, float* R3, float* T0, float* T1, float* T2, float* T3, const int width, const int height, GaussianHandle& gaussianhandle, hipStream_t stream){
     int th_x = 16;
     int th_y = 16;
     int bl_x = (width +th_x-1)/th_x;
     int bl_y = (height +th_y-1)/th_y;
-    computeD_Kernel<<<dim3(bl_x, bl_y), dim3(th_x, th_y), 0, stream>>>(R0, R1, R2, R3, T0, T1, T2, T3, width, height, gaussianhandle);
+    computeD_Kernel<<<dim3(bl_x, bl_y), dim3(th_x, th_y), 0, stream>>>(out0, out1, out2, out3, R0, R1, R2, R3, T0, T1, T2, T3, width, height, gaussianhandle);
     GPU_CHECK(hipGetLastError());
 }
 
-__global__ void computeD_baseband_kernel(float* Lbkg, float* p1, float* p2, int width, int height, int channel, int band, CSF_Handler csfhandle){
+__global__ void computeD_baseband_kernel(float* out, float* Lbkg, float* p1, float* p2, int width, int height, int channel, int band, CSF_Handler csfhandle){
     const int64_t thid = threadIdx.x + blockIdx.x * blockDim.x;
     if (thid >= width*height) return;
 
     const float S = csfhandle.computeSensitivityGPU(Lbkg[0], band, channel);
     //if (thid == 0) printf("ComputeDbasedband D: %f, T_f %f R_f %f S %f Lbkg %f\n", abs(p1[thid] - p2[thid])*S, p2[thid], p1[thid], S, Lbkg[0]);
-    p1[thid] = abs(p1[thid] - p2[thid])*S * baseband_weight[channel]; //the weight is put here to avoid another kernel later doing that
+    out[thid] = abs(p1[thid] - p2[thid])*S * baseband_weight[channel]; //the weight is put here to avoid another kernel later doing that
 }
 
-void computeD_baseband(float* Lbkg, float* p1, float* p2, int width, int height, int channel, int band, CSF_Handler& csfhandle, hipStream_t stream){
+void computeD_baseband(float* out, float* Lbkg, float* p1, float* p2, int width, int height, int channel, int band, CSF_Handler& csfhandle, hipStream_t stream){
     int th_x = 256;
     int bl_x = (width*height +th_x-1)/th_x;
-    computeD_baseband_kernel<<<dim3(bl_x), dim3(th_x), 0, stream>>>(Lbkg, p1, p2, width, height, channel, band, csfhandle);
+    computeD_baseband_kernel<<<dim3(bl_x), dim3(th_x), 0, stream>>>(out, Lbkg, p1, p2, width, height, channel, band, csfhandle);
     GPU_CHECK(hipGetLastError());
 }
 

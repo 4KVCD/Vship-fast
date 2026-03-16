@@ -22,19 +22,31 @@
 namespace cvvdp{
 
 VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model){
-    const int64_t bandOffset = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
+    const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
     VkDeviceAddress Y_sustained1 = mem_d;
-    VkDeviceAddress RG_sustained1 = mem_d + sizeof(float)*bandOffset;
-    VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*bandOffset;
-    VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*bandOffset;
+    VkDeviceAddress RG_sustained1 = mem_d + sizeof(float)*pyramidSize;
+    VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*pyramidSize;
+    VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*pyramidSize;
 
-    VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*bandOffset;
-    VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*bandOffset;
-    VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*bandOffset;
-    VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*bandOffset;
+    VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*pyramidSize;
+    VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*pyramidSize;
+    VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*pyramidSize;
+    VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*pyramidSize;
     
-    VkDeviceAddress tempResize1 = mem_d + sizeof(float)*10*bandOffset; //only allocated if needed
-    VkDeviceAddress tempResize2 = mem_d + sizeof(float)*10*bandOffset+resize_width*source_height*sizeof(float);
+    VkDeviceAddress tempResize1 = mem_d + sizeof(float)*10*pyramidSize; //only allocated if needed
+    VkDeviceAddress tempResize2 = mem_d + sizeof(float)*10*pyramidSize+resize_width*source_height*sizeof(float);
+
+    const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
+    VkDeviceAddress res[4] = {mem_d + sizeof(float)*10*pyramidSize, mem_d + sizeof(float)*11*pyramidSize, mem_d + sizeof(float)*12*pyramidSize, mem_d + sizeof(float)*13*pyramidSize};
+    int64_t w = resize_width;
+    int64_t h = resize_height;
+    std::vector<int64_t> bandOffsets(levels);
+    bandOffsets[0] = 0;
+    for (int i = 1; i < levels; i++){
+        bandOffsets[i] = bandOffsets[i-1]+w*h*sizeof(float);
+        w = (w+1)/2;
+        h = (h+1)/2;
+    }
 
     if (source_width < resize_width){
         //this means that the planes contained in Y_sustained... are not the right size!
@@ -50,23 +62,22 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     }
 
     const float ppd = model->get_screen_ppd();
-    LpyrManager LPyr1(deviceHelper, cmdBuff, mem_d, resize_width, resize_height, ppd, bandOffset);
-    LpyrManager LPyr2(deviceHelper, cmdBuff, mem_d + sizeof(float)*5*bandOffset, resize_width, resize_height, ppd, bandOffset);
+    LpyrManager LPyr1(deviceHelper, cmdBuff, mem_d, resize_width, resize_height, ppd, pyramidSize);
+    LpyrManager LPyr2(deviceHelper, cmdBuff, mem_d + sizeof(float)*5*pyramidSize, resize_width, resize_height, ppd, pyramidSize);
     
-    int64_t w = resize_width;
-    int64_t h = resize_height;
-    const int levels = LPyr1.getSize();
+    w = resize_width;
+    h = resize_height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
             for (int channel = 0; channel < 4; channel++){
                 placePreGaussianPreCompute(deviceHelper, cmdBuff, LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle);
             }
             //it writes on its source
-            placeComputeD(deviceHelper, cmdBuff, LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle);
+            placeComputeD(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle);
         } else {
             //baseband
             for (int channel = 0; channel < 4; channel++){
-                placeComputeD_baseband(deviceHelper, cmdBuff, LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle);
+                placeComputeD_baseband(deviceHelper, cmdBuff, res[channel]+bandOffsets[band], LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle);
             }
         }
         w = (w+1)/2;
@@ -80,7 +91,7 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
         for (int channel = 0; channel < 4; channel++){
             const auto [w, h] = LPyr1.getResolution(band);
             const int64_t size = w*h;
-            placeComputeMean<2>(deviceHelper, cmdBuff, LPyr1.getContrast(channel, band), temp+sizeof(float)*tempOffset, size, true);
+            placeComputeMean<2>(deviceHelper, cmdBuff, res[channel]+bandOffsets[band], temp+sizeof(float)*tempOffset, size, true);
             tempOffset++; //we stored the norm at temp[tempOffset]
         }
     }
@@ -90,12 +101,11 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
 
     if (outputDistmap){
         //we want a distmap
-        placeGetDistMap(deviceHelper, cmdBuff, LPyr1);
-        //result is in LPyr1.getLbkg(0), we can now discard other planes
-        //LPyr1.getContrast(0, 0) can serve as a big buffer memory for the strided version
+        placeGetDistMap(deviceHelper, cmdBuff, res, bandOffsets, resize_width, resize_height, levels);
+        //result is in res[0], we can now discard other planes
     }
 
-    return LPyr1.getLbkg(0);
+    return res[0];
 }
 
 float cpuPostTreatment(float* scores, uint levels){
@@ -186,9 +196,9 @@ public:
         //memory allocations
         size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
         size_t tempSizeConverter2 = converter2.getTempMemoryNeeded();
-        const int64_t bandOffset = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
+        const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
         size_t preLoadBufferSize = 2*(source_width*source_height*3*sizeof(float)+source_height*resize_width*sizeof(float));
-        size_t finalStageBufferSize = 2*sizeof(float)*bandOffset*5;
+        size_t finalStageBufferSize = 2*sizeof(float)*pyramidSize*5 + sizeof(float)*pyramidSize*4;
         if (source_width < resize_width){
             //resize at the end
             finalStageBufferSize += 2*(resize_width*minheight*sizeof(float));
@@ -346,16 +356,16 @@ public:
         placeXYZ_to_dkl(deviceHelper, cmdBuff, filterSrc2_d, minwidth*minheight);
         //and we are done, the frame is loaded in the ring with the right colorspace, next step is temporal filtering
 
-        const int64_t bandOffset = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
+        const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
         VkDeviceAddress Y_sustained1 = mem_d;
-        VkDeviceAddress RG_sustained1 = mem_d + sizeof(float)*bandOffset;
-        VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*bandOffset;
-        VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*bandOffset;
+        VkDeviceAddress RG_sustained1 = mem_d + sizeof(float)*pyramidSize;
+        VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*pyramidSize;
+        VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*pyramidSize;
 
-        VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*bandOffset;
-        VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*bandOffset;
-        VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*bandOffset;
-        VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*bandOffset;
+        VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*pyramidSize;
+        VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*pyramidSize;
+        VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*pyramidSize;
+        VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*pyramidSize;
 
         //let's get the temporal channel out of the temporal ring!
 
@@ -380,7 +390,7 @@ public:
         //we need to record buffer 1 and 3, where 1 is putting frame on GPU and 3 is retrieving distmap if wanted
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
         float ppd = model->get_screen_ppd();
-        const int64_t bandOffset = LpyrMemoryNeedPerPlane(resize_width, resize_height, ppd);
+        const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, ppd);
         uint levels = get_frequencies(resize_width, resize_height, ppd).size();
 
         //create bufferToGPU
@@ -396,8 +406,8 @@ public:
             intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc((resize_width*resize_height)*sizeof(float));
             resetCmdBuffer(cmdBuffs[3]);
             beginCmdBuffer(cmdBuffs[3]);
-            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d + sizeof(float)*4*bandOffset, dststride, resize_width, resize_height);
-            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d + sizeof(float)*4*bandOffset, dststride * resize_height);
+            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d + sizeof(float)*4*pyramidSize, dststride, resize_width, resize_height);
+            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d + sizeof(float)*4*pyramidSize, dststride * resize_height);
             endCmdBuffer(cmdBuffs[3]);
         }
 

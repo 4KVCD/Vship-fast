@@ -107,7 +107,7 @@ float GaussianSmart_Device(const int thx, const int thy, int64_t x, int64_t y, i
 //work on 16x16 blocks
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* R0, uniform float* R1, uniform float* R2, uniform float* R3, uniform float* T0, uniform float* T1, uniform float* T2, uniform float* T3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
+void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* out0, uniform float* out1, uniform float* out2, uniform float* out3, uniform float* R0, uniform float* R1, uniform float* R2, uniform float* R3, uniform float* T0, uniform float* T1, uniform float* T2, uniform float* T3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
     const int64_t x = (threadIdx.x + blockIdx.x*16);
     const int64_t y = (threadIdx.y + blockIdx.y*16);
     const int64_t id = y*width + x;
@@ -152,21 +152,21 @@ void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     const float D3 = max_v*Du3/(max_v+Du3);
 
     //we write D inside Reference planes along with the channel multiplier
-    R0[id] = D0 * 1.f;
-    R1[id] = D1 * ch_chrom_w;
-    R2[id] = D2 * ch_chrom_w;
-    R3[id] = D3 * ch_trans_w;
+    out0[id] = D0 * 1.f;
+    out1[id] = D1 * ch_chrom_w;
+    out2[id] = D2 * ch_chrom_w;
+    out3[id] = D3 * ch_trans_w;
 
     //if (id == 13*1024 + 64 && width == 827) printf("D id/width %lld/%d: %f %f %f %f\n", id, width, D0, D1, D2, D3);
 }
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void computeD_baseband(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* Lbkg, uniform float* p1, uniform float* p2, uniform float* CSFMem_d, uniform int width, uniform int height, uniform int channel, uniform int band){
+void computeD_baseband(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* out, uniform float* Lbkg, uniform float* p1, uniform float* p2, uniform float* CSFMem_d, uniform int width, uniform int height, uniform int channel, uniform int band){
     const int64_t thid = threadIdx.x + blockIdx.x * 256;
     if (thid >= width*height) return;
 
     const float S = computeSensitivityGPU(Lbkg[0], band, channel, CSFMem_d);
     //if (thid == 0) printf("ComputeDbasedband D: %f, T_f %f R_f %f S %f Lbkg %f\n", abs(p1[thid] - p2[thid])*S, p2[thid], p1[thid], S, Lbkg[0]);
-    p1[thid] = abs(p1[thid] - p2[thid])*S * baseband_weight[channel]; //the weight is put here to avoid another kernel later doing that
+    out[thid] = abs(p1[thid] - p2[thid])*S * baseband_weight[channel]; //the weight is put here to avoid another kernel later doing that
 }

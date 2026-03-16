@@ -41,26 +41,29 @@ void mergeChromaNorm(float* p0, float* p1, float* p2, float* p3, int64_t size, h
     GPU_CHECK(hipGetLastError());
 }
 
-//we should have D values in Lpyr bands and channels.
-//Lbkg planes will serve as a buffer and the final result willl be in Lbkg band 0
-void getDistMap(LpyrManager& Lpyr, hipStream_t stream){
+//output in res[0]
+void getDistMap(float* res[4], std::vector<int64_t>& bandOffsets, int64_t width, int64_t height, int levels, hipStream_t stream){
     //first step is merging chroma planes
-    for (int band = 0; band < Lpyr.getSize(); band++){
-        const auto [w, h] = Lpyr.getResolution(band);
-        if (band == 0 || band == Lpyr.getSize()-1){
-            mergeChromaNorm<1>(Lpyr.getContrast(0, band), Lpyr.getContrast(1, band), Lpyr.getContrast(2, band), Lpyr.getContrast(3, band), w*h, stream);
+    int64_t w = width;
+    int64_t h = height;
+    for (int band = 0; band < levels; band++){
+        if (band == 0 || band == levels-1){
+            mergeChromaNorm<1>(res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[2]+bandOffsets[band], w*h, stream);
         } else {
-            mergeChromaNorm<2>(Lpyr.getContrast(0, band), Lpyr.getContrast(1, band), Lpyr.getContrast(2, band), Lpyr.getContrast(3, band), w*h, stream);
+            mergeChromaNorm<2>(res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[2]+bandOffsets[band], w*h, stream);
         }
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
     //reconstruction
-    for (int band = Lpyr.getSize()-2; band >= 0; band--){
-        const auto [w, h] = Lpyr.getResolution(band);
-        gaussPyrExpand<false, true, false>(Lpyr.getContrast(0, band), Lpyr.getContrast(0, band+1), w, h, stream);
+    w = width;
+    h = height;
+    for (int band = levels-2; band >= 0; band--){
+        gaussPyrExpand<false, true, false>(res[0]+bandOffsets[band], res[0]+bandOffsets[band+1], w, h, stream);
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
-    const auto [w0, h0] = Lpyr.getResolution(0);
-    GPU_CHECK(hipMemcpyDtoDAsync(Lpyr.getLbkg(0), Lpyr.getContrast(0, 0), sizeof(float)*w0*h0, stream));
-    JODIZE_Kernel<<<dim3((w0*h0+255)/256), dim3(256), 0, stream>>>(Lpyr.getLbkg(0), w0*h0);
+    JODIZE_Kernel<<<dim3((width*height+255)/256), dim3(256), 0, stream>>>(res[0], width*height);
     GPU_CHECK(hipGetLastError());
 }
 

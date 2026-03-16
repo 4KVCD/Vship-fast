@@ -29,35 +29,47 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     //if minwidth < resize_width it means we need to resize still, this requires more memory
 
     int allocatedPlanes = 5;
-    int stream1_supPlane = 0;
+    int stream1_supPlane = 4;
     int64_t resizeBufferSize = 0;
     if (minwidth < resize_width) resizeBufferSize = resize_width*minheight*sizeof(float);
 
-    const int64_t bandOffset = LpyrMemoryNeedPerPlane(width, height, model->get_screen_ppd());
-    //std::cout << "allocation bytes : " << sizeof(float)*(allocatedPlanes+stream1_supPlane)*bandOffset << std::endl;
+    const int64_t pyramidSize = LpyrMemoryNeedPerPlane(width, height, model->get_screen_ppd());
+    //std::cout << "allocation bytes : " << sizeof(float)*(allocatedPlanes+stream1_supPlane)*pyramidSize << std::endl;
     float* mem_d;
-    hipError_t erralloc = hipMallocAsync(&mem_d, sizeof(float)*(allocatedPlanes+stream1_supPlane)*bandOffset+resizeBufferSize, stream1);
+    hipError_t erralloc = hipMallocAsync(&mem_d, sizeof(float)*(allocatedPlanes+stream1_supPlane)*pyramidSize+resizeBufferSize, stream1);
     if (erralloc != hipSuccess){
         throw VshipError(OutOfVRAM, __FILE__, __LINE__);
     }
     //second stream
     float* mem_d2;
-    erralloc = hipMallocAsync(&mem_d2, sizeof(float)*allocatedPlanes*bandOffset+resizeBufferSize, stream2);
+    erralloc = hipMallocAsync(&mem_d2, sizeof(float)*allocatedPlanes*pyramidSize+resizeBufferSize, stream2);
     if (erralloc != hipSuccess){
         throw VshipError(OutOfVRAM, __FILE__, __LINE__);
     }
 
     float* Y_sustained1 = mem_d;
-    float* RG_sustained1 = mem_d + bandOffset;
-    float* YV_sustained1 = mem_d + 2*bandOffset;
-    float* Y_transient1 = mem_d + 3*bandOffset;
-    float* tempResize1 = mem_d + 4*bandOffset; //is only allocated if needed
+    float* RG_sustained1 = mem_d + pyramidSize;
+    float* YV_sustained1 = mem_d + 2*pyramidSize;
+    float* Y_transient1 = mem_d + 3*pyramidSize;
+    float* tempResize1 = mem_d + 4*pyramidSize; //is only allocated if needed
 
     float* Y_sustained2 = mem_d2;
-    float* RG_sustained2 = mem_d2 + bandOffset;
-    float* YV_sustained2 = mem_d2 + 2*bandOffset;
-    float* Y_transient2 = mem_d2 + 3*bandOffset;
-    float* tempResize2 = mem_d2 + 4*bandOffset;
+    float* RG_sustained2 = mem_d2 + pyramidSize;
+    float* YV_sustained2 = mem_d2 + 2*pyramidSize;
+    float* Y_transient2 = mem_d2 + 3*pyramidSize;
+    float* tempResize2 = mem_d2 + 4*pyramidSize;
+
+    const int levels = get_frequencies(width, height, model->get_screen_ppd()).size();
+    float* res[4] = {mem_d + 5*pyramidSize, mem_d + 6*pyramidSize, mem_d + 7*pyramidSize, mem_d + 8*pyramidSize};
+    int64_t w = width;
+    int64_t h = height;
+    std::vector<int64_t> bandOffsets(levels);
+    bandOffsets[0] = 0;
+    for (int i = 1; i < levels; i++){
+        bandOffsets[i] = bandOffsets[i-1]+w*h;
+        w = (w+1)/2;
+        h = (h+1)/2;
+    }
 
     //let's get the temporal channel out of the temporal ring!
     computeTemporalChannels(temporalRing1, Y_sustained1, RG_sustained1, YV_sustained1, Y_transient1, stream1);
@@ -77,28 +89,27 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     }
 
     const float ppd = model->get_screen_ppd();
-    LpyrManager LPyr1(mem_d, width, height, ppd, bandOffset, stream1);
-    LpyrManager LPyr2(mem_d2, width, height, ppd, bandOffset, stream2);
+    LpyrManager LPyr1(mem_d, width, height, ppd, pyramidSize, stream1);
+    LpyrManager LPyr2(mem_d2, width, height, ppd, pyramidSize, stream2);
 
     //stream1 waits for stream2 to be done
     GPU_CHECK(hipEventRecord(event, stream2));
     GPU_CHECK(hipStreamWaitEvent(stream1, event));
     //now we only use stream1, this is the time for merging both sources
     
-    int w = width;
-    int h = height;
-    const int levels = LPyr1.getSize();
+    w = width;
+    h = height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
             for (int channel = 0; channel < 4; channel++){
                 preGaussianPreCompute(LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle, stream1);
             }
             //it writes on its source
-            computeD(LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle, stream1);
+            computeD(res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle, stream1);
         } else {
             //baseband
             for (int channel = 0; channel < 4; channel++){
-                computeD_baseband(LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle, stream1);
+                computeD_baseband(res[channel]+bandOffsets[band], LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle, stream1);
             }
         }
         w = (w+1)/2;
@@ -117,7 +128,7 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
         for (int channel = 0; channel < 4; channel++){
             const auto [w, h] = LPyr1.getResolution(band);
             const int64_t size = w*h;
-            computeMean<2>(LPyr1.getContrast(channel, band), temp+tempOffset, size, true, stream1);
+            computeMean<2>(res[channel]+bandOffsets[band], temp+tempOffset, size, true, stream1);
             tempOffset++; //we stored the norm at temp[tempOffset]
         }
     }
@@ -125,11 +136,9 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
 
     if (dstp != NULL){
         //we want a distmap
-        getDistMap(LPyr1, stream1);
-        //result is in LPyr1.getLbkg(0), we can now discard other planes
-        //LPyr1.getContrast(0, 0) serves as a big buffer memory for the strided version
-        strideAdder(LPyr1.getLbkg(0), LPyr1.getContrast(0, 0), dststride, width, height, stream1);
-        GPU_CHECK(hipMemcpyDtoHAsync((void*)(dstp), LPyr1.getContrast(0, 0), dststride * height, stream1));
+        getDistMap(res, bandOffsets, width, height, levels, stream1);
+        strideAdder(res[0], res[1], dststride, width, height, stream1);
+        GPU_CHECK(hipMemcpyDtoHAsync((void*)(dstp), res[1], dststride * height, stream1));
     }
 
     GPU_CHECK(hipStreamSynchronize(stream1));
