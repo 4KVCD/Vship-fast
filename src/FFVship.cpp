@@ -38,7 +38,7 @@ using score_queue_t = ClosableThreadSet<std::tuple<int, score_tuple_t>>;
 using frame_tuple_t = std::tuple<int, uint8_t *, uint8_t *>;
 using frame_queue_t = ThreadSafeQueue<frame_tuple_t>;
 using frame_pool_t = threadSet<uint8_t *>;
-using ProgressBarT = ProgressBar<500>;
+using ProgressBarT = ProgressBar<100>;
 
 void frame_reader_thread(VideoManager &v1, VideoManager &v2, std::vector<int>* frames_source, std::vector<int>* frames_encoded, int threadid, int threadnum, frame_queue_t &queue,
                          frame_pool_t &frame_buffer_pool) {
@@ -100,7 +100,7 @@ void frame_worker_thread(frame_queue_t &input_queue,
         const uint8_t* src_buffer_planes[3] = {src_buffer, src_buffer+planeSize[0], src_buffer+planeSize[0]+planeSize[1]};
         const uint8_t* enc_buffer_planes[3] = {enc_buffer, enc_buffer+planeSize2[0], enc_buffer+planeSize2[0]+planeSize2[1]};
         const auto& [scores, vshipError] = gpu_worker.compute_metric_score(src_buffer_planes, enc_buffer_planes);
-        
+
         if (vshipError != Vship_NoError){
             frame_buffer_pool.insert(src_buffer);
             frame_buffer_pool.insert(enc_buffer);
@@ -515,7 +515,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    //cleanup 
+    //cleanup
     for (auto& el: frame_buffers) {
         GpuWorker::deallocate_external_buffer(el);
     }
@@ -567,6 +567,14 @@ int main(int argc, char **argv) {
             }
         }
         jsonfile << "]";
+    }
+
+    // svg output
+    if (cli_args.svg_output_file != "") {
+        const int svg_error = write_to_svg(cli_args, scores);
+        if (svg_error) {
+            return svg_error;
+        }
     }
 
     if (cli_args.live_index_score_output) return 0;

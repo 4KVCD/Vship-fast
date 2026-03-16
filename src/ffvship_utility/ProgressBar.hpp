@@ -26,7 +26,7 @@ void get_terminal_size(int& width, int& height) {
 
 //not threadsafe now
 //refreshrate in ms, it represent minimal time but we wait for a frame to refresh
-template<int RefreshRate = 500, bool DisplayValue = true>
+template<int RefreshRate = 100, bool DisplayValue = true>
 class ProgressBar{
     double total_sum = 0;
     int64_t num = 0;
