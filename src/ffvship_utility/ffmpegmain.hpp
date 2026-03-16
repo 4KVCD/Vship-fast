@@ -1244,7 +1244,7 @@ int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& s
                 << "\" stroke=\"#000000\" stroke-opacity=\"1\" stroke-width=\"2\" "
                    "stroke-linecap=\"butt\" opacity=\"0.2\" />";
 
-        const int frame_nbr = static_cast<int>(i_float / static_cast<float>(nbr_column) * static_cast<float>(nbr_scores)) * cli_args.every_nth_frame;
+        const int frame_nbr = static_cast<int>(i_float / static_cast<float>(nbr_column-1) * static_cast<float>(nbr_scores)) * cli_args.every_nth_frame;
         // x-coordinate texts (frame number)
         svgfile << "<text x=\"" << x << "\" y=\"" << height + 10
                 << "\" dx=\"0\" dy=\"0\" textLength=\"none\" "
