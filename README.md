@@ -49,7 +49,7 @@ For all build options the following are required:
 
 - `make`
 
-To build the HIP/Cuda version
+To build the HIP/CUDA version
 
 - `hipcc` (AMD HIP SDK) or `nvcc` (NVIDIA CUDA SDK)
 
@@ -214,7 +214,7 @@ ref.vship.CVVDP(dist, distmap = 1).set_output()
 
 ## Performance
 
-Testing Hardware: Ryzen 7940HS + RTX 4050 Mobile (strong CPU - weak GPU configuration)
+Testing Hardware: Ryzen 7940HS + RTX 4050 Mobile (strong CPU - weak GPU configuration)  
 Testing Clip: 1080p 1339 frames
 
 SSIMU2 Implementation | HW Type | Time
@@ -223,33 +223,33 @@ JXL | CPU | 115s
 VSZIP | CPU | 71.748s
 fssimu2 | CPU | 60.222s
 ssimulacra2_rs | CPU | X s
-Cuda | --- | ---
+--- **CUDA** --- | --- | ---
 Vapoursynth Vship | GPU | 11.431s
 FFVship | GPU | 9.121s
-Vulkan | --- | ---
+--- **Vulkan** --- | --- | ---
 Vapoursynth Vship | GPU | 16.046s
 FFVship | GPU | 11.252s
 
 Butteraugli Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 239s
-Cuda | --- | ---
+--- **CUDA** --- | --- | ---
 Vapoursynth Vship | GPU | 39.528s
 FFVship | GPU | 38.710s
-Vulkan | --- | ---
+--- **Vulkan** --- | --- | ---
 Vapoursynth Vship | GPU | 47.961s
 FFVship | GPU | 41.484s
 
-CVVDP Implementation | HW Type | Score | Time
---- | --- | --- | ---
+CVVDP Implementation | HW Type | Time
+--- | --- | ---
 Original Repo | CPU | 1632s
 FFVship (Vulkan llvmPipe) | CPU | 499s
 fcvvdp | CPU | 360.893s
 Original Repo | GPU | 162s
-Cuda | --- | ---
+--- **CUDA** --- | ---
 Vapoursynth Vship | GPU | 28.558s
 FFVship | GPU | 23.197s
-Vulkan | --- | ---
+--- **Vulkan** --- | ---
 Vapoursynth Vship | GPU | 53.750s
 FFVship | GPU | 41.297s
 
