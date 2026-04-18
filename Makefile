@@ -7,13 +7,13 @@ HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx10
 
 ifeq ($(OS),Windows_NT)
 	vulkanLink := -I "${VULKAN_SDK}\Include" -L "${VULKAN_SDK}\Lib" -lvulkan-1
-    dllend := .dll
+	dllend := .dll
 	exeend := .exe
-    fpiccuda :=
-    fpic :=
-    plugin_install_path := $(APPDATA)\VapourSynth\plugins64
-    exe_install_path := $(ProgramFiles)\FFVship.exe
-    ffvshiplibheader :=  -lffms2 -llibvship
+	fpiccuda :=
+	fpic :=
+	plugin_install_path := $(APPDATA)\VapourSynth\plugins64
+	exe_install_path := $(ProgramFiles)\FFVship.exe
+	ffvshiplibheader :=  -lffms2 -llibvship
 	ffvshipincludeheader := -I include
 	fatbincompressamd := 
 	fatbincompresscuda := 
@@ -23,15 +23,15 @@ else
 	else
 		vulkanLink := -I "${VULKAN_SDK}/include" -L "${VULKAN_SDK}/lib" -lvulkan
 	endif
-    dllend := .so
+	dllend := .so
 	exeend :=
-    fpiccuda := -Xcompiler -fPIC
-    fpic := -fPIC
-    plugin_install_path := $(DESTDIR)$(PREFIX)/lib/vapoursynth
+	fpiccuda := -Xcompiler -fPIC
+	fpic := -fPIC
+	plugin_install_path := $(DESTDIR)$(PREFIX)/lib/vapoursynth
 	lib_install_path := $(DESTDIR)$(PREFIX)/lib
-    exe_install_path := $(DESTDIR)$(PREFIX)/bin
+	exe_install_path := $(DESTDIR)$(PREFIX)/bin
 	header_install_path := $(DESTDIR)$(PREFIX)/include
-    ffvshiplibheader := $(shell pkg-config --libs ffms2) -lvship
+	ffvshiplibheader := $(shell pkg-config --libs ffms2) -lvship
 	ffvshipincludeheader := $(shell pkg-config --cflags-only-I ffms2 libavutil)
 	fatbincompressamd := 
 	fatbincompresscuda := 
