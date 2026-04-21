@@ -942,7 +942,9 @@ public:
     }
 
     ~VkManager(){
+#ifndef _WIN32
         if (enableValidationLayers) DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         vkDestroyInstance(instance, nullptr);
+#endif
     }
 };
