@@ -164,21 +164,24 @@ private:
     //returns 1 if the model isnt set (ie everything is fine and model name is not found inside)
     //throws exception otherwise
     int parseJson(std::string jsonfile, std::string model_name){
-        std::ifstream file(jsonfile);
+        int ret;
+        if (jsonfile.size() > 0 && jsonfile[0] == '{'){
+            //direct json parsing
+            std::stringstream content(jsonfile);
+            ret = parseMasterDictionary(content, model_name);
+        } else {
+            std::ifstream file(jsonfile);
+            if (!file) throw VshipError(BadPath, __FILE__, __LINE__, "Path: "+jsonfile);
+            //auto timeinit = std::chrono::high_resolution_clock::now();
+            ret = parseMasterDictionary(file, model_name);
+            //auto timeend = std::chrono::high_resolution_clock::now();
+            //const uint64_t milli = std::chrono::duration_cast<std::chrono::microseconds>(timeend - timeinit).count();
+            //std::cout << "time for parsing: " << milli << " micro seconds" << std::endl;
+        }
 
-        if (!file) throw VshipError(BadPath, __FILE__, __LINE__, "Path: "+jsonfile);
-        
-        //auto timeinit = std::chrono::high_resolution_clock::now();
-
-        int ret = parseMasterDictionary(file, model_name);
-        
-        //auto timeend = std::chrono::high_resolution_clock::now();
-        //const uint64_t milli = std::chrono::duration_cast<std::chrono::microseconds>(timeend - timeinit).count();
-        //std::cout << "time for parsing: " << milli << " micro seconds" << std::endl;
-        
         return ret;
     }
-    int parseMasterDictionary(std::ifstream& stream, std::string& model_name){
+    int parseMasterDictionary(std::istream& stream, std::string& model_name){
         int ret = 1;
 
         //get inside main dictionnary
@@ -191,7 +194,7 @@ private:
             passUntil<'{'>(stream, false); //open the dic
             if (key != model_name) {
                 //we pass the model since it is not the one we want
-                closeCurrentDic(stream); 
+                closeCurrentDic(stream);
                 //close it no matter what is inside to be ready for next key
             } else {
                 //we have the model we wish
@@ -208,7 +211,7 @@ private:
         return ret;
     }
     //we have passed the opening { and will need to parse the final } before stopping
-    void parseDisplayDictionary(std::ifstream& stream){
+    void parseDisplayDictionary(std::istream& stream){
         while (passUntil2<'"', '}'>(stream, true) == 0){
             //we are at a key definition point
             std::string key = parseString(stream);
@@ -224,7 +227,7 @@ private:
                 std::string theircolorspace = parseString(stream);
                 if (theircolorspace == "HDR" || theircolorspace == "BT.2020-PQ" || theircolorspace == "BT.2020-HLG"){
                     colorspace = HDR;
-                } else if (theircolorspace == "BT.709-linear" || theircolorspace == "sRGB" || theircolorspace == "SDR" || theircolorspace == "Display P3 Apple"){
+                } else if (theircolorspace == "BT.709-linear" || theircolorspace == "sRGB" || theircolorspace == "SDR"){
                     colorspace = sRGB;
                 } else {
                     throw VshipError(BadJson, __FILE__, __LINE__, "colospace can either be BT.2020-PQ, BT.2020-HLG, BT.709-linear, HDR, sRGB or SDR");
@@ -274,7 +277,7 @@ private:
     //exception if fail
     //return the element that got trapped
     template<char ch>
-    int passUntil(std::ifstream& stream, const bool allowLineRet){
+    int passUntil(std::istream& stream, const bool allowLineRet){
         char t;
         std::string moredetail = "";
         while (moredetail == "" && stream >> std::noskipws >> t){
@@ -293,7 +296,7 @@ private:
                     moredetail.push_back(t);
                     continue;
             }
-            
+
         }
         moredetail += " missing character `";
         moredetail.push_back(ch);
@@ -301,7 +304,7 @@ private:
         throw VshipError(BadJson, __FILE__, __LINE__, moredetail);
     }
     template<char ch, char ch2>
-    int passUntil2(std::ifstream& stream, const bool allowLineRet){
+    int passUntil2(std::istream& stream, const bool allowLineRet){
         char t;
         std::string moredetail = "";
         while (moredetail == "" && stream >> std::noskipws >> t){
@@ -322,7 +325,7 @@ private:
                     moredetail.push_back(t);
                     continue;
             }
-            
+
         }
         moredetail += " missing character `";
         moredetail.push_back(ch);
@@ -333,7 +336,7 @@ private:
         throw VshipError(BadJson, __FILE__, __LINE__, moredetail);
     }
     //stops when there is one more } than {
-    void closeCurrentDic(std::ifstream& stream){
+    void closeCurrentDic(std::istream& stream){
         char t;
         int counter = 1;
         bool isinstring = false;
@@ -358,7 +361,7 @@ private:
         throw VshipError(BadJson, __FILE__, __LINE__, "Unclosed {");
     }
     //doesnt accept '\', stops directly at a "
-    std::string parseString(std::ifstream& stream){
+    std::string parseString(std::istream& stream){
         std::string res = "";
         char t;
         while (stream >> std::noskipws >> t){
@@ -373,7 +376,7 @@ private:
         throw VshipError(BadJson, __FILE__, __LINE__, "String is not terminated at EOF");
         return "";
     }
-    float parseFloat(std::ifstream& stream, bool allowLineRet){
+    float parseFloat(std::istream& stream, bool allowLineRet){
         char t;
         //skipping until digit is found
         do{

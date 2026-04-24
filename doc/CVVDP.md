@@ -64,7 +64,9 @@ Each Display has its own resolution. An accurate result of the rescaled content 
 
 ### model_config_json
 
-Allows to specify a path to a config file written the same way as the original CVVDP repo. Here is the format supported by vship:
+Its input can be either a path to a json, or, if the input starts with "{" a json string directly.
+
+It allows to specify a config file written the same way as the original CVVDP repo. Here is the format supported by vship:
 
 ```
 {
