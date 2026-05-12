@@ -16,6 +16,7 @@ model_name | `str` | No | `standard_fhd`
 model_config_json | `str` | No | ""
 resizeToDisplay | `int` | No | `0`
 distmap | `int` | No | `0`
+disableTemporal | `int` | No | `0`
 gpu_id | `int` | No | `0`
 
 ### reference
@@ -47,6 +48,12 @@ VideoNode
 ```
 
 `distmap` will also contain the [CVVDP return values]
+
+### disableTemporal
+
+this option can be set to True which will disable the temporal filtering of CVVDP and will disable score accumulation.
+The latter means that instead of returning a score corresponding to frame 0 to current frame, it only returns the score of the current frame each time.
+This also affects distortion map and may help using it as a mask to avoid temporal artifacts on the error map.
 
 ### model_name
 
