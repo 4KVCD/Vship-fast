@@ -93,7 +93,7 @@ beware that any size mismatch will imply a resize! example:
 my source is 1910x1080 and my encoded is 1920x1080
 
 I crop my source at left by 10 to 1900x1080 and my encoded at left by 10 to 1910x1080
-Then FFVship will resize the decode the encoded to 1920x1080 then resize to 1910x1080 then crop to 1900x1080.
+Then FFVship will resize the encoded to 1910x1080 then crop to 1900x1080, while the original is just cropped to 1900x1080.
 (the step is: decode to normal size, resize to the right size such that once cropped, it matches source cropped size)
 
 ### -t / -g
