@@ -47,7 +47,7 @@ extern "C"{
 
 Vship_Version Vship_GetVersion(){
     Vship_Version res;
-    res.major = 5; res.minor = 0; res.minorMinor = 1;
+    res.major = 5; res.minor = 0; res.minorMinor = 2;
     #ifdef VULKANBUILD
     res.backend = Vship_Vulkan;
     #else
