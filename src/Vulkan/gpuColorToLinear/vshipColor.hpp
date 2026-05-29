@@ -208,14 +208,14 @@ public:
             VkDeviceAddress interm = temp;
             VkDeviceAddress interm2 = temp + maxWidth*maxHeight;
             VkDeviceAddress fin = outPlanes[i];
-            if (isCropped){
+            if (isCropped && isResized){
                 //std::cout << source_colorspace.width << "x" << source_colorspace.height << " / " << source_colorspace.target_width << "x" << source_colorspace.target_height << std::endl;
                 //std::cout << source_colorspace.crop.top << " " << source_colorspace.crop.bottom << " " << source_colorspace.crop.left << " " << source_colorspace.crop.right << std::endl;
                 placeResizePlane(deviceHelper, cmdbuff, interm, interm2, base, source_colorspace.width, source_colorspace.height, source_colorspace.target_width, source_colorspace.target_height);
-                placeStrideEliminator(deviceHelper, cmdbuff, fin, interm+source_colorspace.target_width*source_colorspace.crop.top+source_colorspace.crop.left, source_colorspace.target_width*sizeof(float), getWidth(), getHeight());
+                placeStrideEliminator(deviceHelper, cmdbuff, fin, interm+sizeof(float)*(source_colorspace.target_width*source_colorspace.crop.top+source_colorspace.crop.left), source_colorspace.target_width*sizeof(float), getWidth(), getHeight());
             } else if (isCropped){
                 //std::cout << "Pointer offset: " << source_colorspace.target_width*source_colorspace.crop.top+source_colorspace.crop.left << ", stride: " << source_colorspace.target_width*sizeof(float) << ", new width: " << getWidth() << ", new height: " << getHeight() << std::endl;
-                placeStrideEliminator(deviceHelper, cmdbuff, fin, base+source_colorspace.target_width*source_colorspace.crop.top+source_colorspace.crop.left, source_colorspace.target_width*sizeof(float), getWidth(), getHeight());
+                placeStrideEliminator(deviceHelper, cmdbuff, fin, base+sizeof(float)*(source_colorspace.target_width*source_colorspace.crop.top+source_colorspace.crop.left), source_colorspace.target_width*sizeof(float), getWidth(), getHeight());
             } else if (isResized){
                 placeResizePlane(deviceHelper, cmdbuff, fin, interm, base, source_colorspace.width, source_colorspace.height, source_colorspace.target_width, source_colorspace.target_height);
             }
