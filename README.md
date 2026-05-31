@@ -3,6 +3,8 @@
 An easy to use high-performance Library for GPU-accelerated visual fidelity
 metrics with SSIMULACRA2, Butteraugli & CVVDP.
 
+This project has been 100% made by a **human** (no AI involved).
+
 ## Overview
 
 `vship` provides hardware-accelerated implementations of:
