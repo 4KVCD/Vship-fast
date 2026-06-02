@@ -18,7 +18,6 @@
 #include<cstring>
 #include<algorithm>
 
-
 #if defined __CUDACC__
     #include <cuda_fp16.h>
     #define LOWLEVEL
@@ -61,13 +60,20 @@
     #define hipMemGetInfo cudaMemGetInfo
     #define hipMemsetAsync cudaMemsetAsync
     #define hipMemset cudaMemset
-    #define hipMallocAsync cudaMallocAsync
-    #define hipFreeAsync cudaFreeAsync
     #define hipHostFree cudaFreeHost
     #define hipFreeHost cudaFreeHost
     #define hipHostMalloc cudaMallocHost
     #define hipStreamSynchronize cudaStreamSynchronize
     #define hipStreamWaitEvent cudaStreamWaitEvent
+
+    #ifdef MITIGATE_MALLOC_ASYNC
+        //force synchronization at memory allocation
+        #define hipMallocAsync(a, b, stream) cudaMalloc(a, b)
+        #define hipFreeAsync(a, stream) cudaFree(a)
+    #else
+        #define hipMallocAsync cudaMallocAsync
+        #define hipFreeAsync cudaFreeAsync
+    #endif
 #else
     #include<hip/hip_runtime.h>
     #include<hip/hip_fp16.h>
@@ -77,6 +83,12 @@
     #define hipMemcpyDtoHAsync(x, y, z, w) hipMemcpyAsync(x, y, z, hipMemcpyDeviceToHost, w)
     #define hipMemcpyHtoDAsync(x, y, z, w) hipMemcpyAsync(x, y, z, hipMemcpyHostToDevice, w)
     #define hipMemcpyDtoDAsync(x, y, z, w) hipMemcpyAsync(x, y, z, hipMemcpyDeviceToDevice, w)
+
+    #ifdef MITIGATE_MALLOC_ASYNC
+        //force synchronization to avoid amd driver issues
+        #define hipMallocAsync(a, b, stream) hipMalloc(a, b)
+        #define hipFreeAsync(a, stream) hipFree(a)
+    #endif
 #endif
 
 using uint = unsigned int;

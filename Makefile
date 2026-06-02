@@ -2,6 +2,7 @@ current_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 PREFIX ?= /usr/local
 DESTDIR ?=
+MITIGATE_MALLOC_ASYNC ?= off
 
 HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx906,gfx801,gfx802,gfx803
 
@@ -37,22 +38,26 @@ else
 	fatbincompresscuda := 
 endif
 
+ifeq ($(MITIGATE_MALLOC_ASYNC), on)
+	mitigateAsync := -DMITIGATE_MALLOC_ASYNC
+endif
+
 .FORCE:
 
 buildFFVSHIP: src/FFVship.cpp .FORCE
 	clang++ src/FFVship.cpp -g -std=c++17 -Wall -O3 $(ffvshipincludeheader) -L ./ $(ffvshiplibheader) -o FFVship$(exeend)
 
 build: src/VshipLib.cpp .FORCE
-	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" --offload-arch=native -shared $(fpic) -o "$(current_dir)libvship$(dllend)"
+	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" --offload-arch=native -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"
 
 buildcuda: src/VshipLib.cpp .FORCE
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" -arch=native -shared $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" -arch=native -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
 
 buildcudaall: src/VshipLib.cpp .FORCE
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
 
 buildall: src/VshipLib.cpp .FORCE
-	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(fpic) -o "$(current_dir)libvship$(dllend)"
+	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"
 
 shaderBuild: .FORCE
 	slangc src/Vulkan/util/shaders/Planed.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry StrideEliminator -entry StrideAdder -o libvshipSpvShaders/Planed.spv
