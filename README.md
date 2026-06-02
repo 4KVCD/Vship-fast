@@ -76,6 +76,8 @@ make buildcudaall  # Build for all supported Nvidia gpus
 make build         # Build for the current systems AMD gpu
 make buildall      # Build for all supported AMD gpus
 
+make build MITIGATE_MALLOC_ASYNC=on #build for AMD gpu and add a workaround to current amd driver issues if you have them (will be slower than a normal build)
+
 make shaderBuild   # Force shader rebuild, requires slangc (optional)
 make buildVulkan   # Build release vulkan vship
 make debugVulkan   # Build Vulkan Vship with debugging symbols and validation layers
