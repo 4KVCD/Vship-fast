@@ -1,7 +1,7 @@
 import vshipColorModule;
 
 float fullRange(Vship_Sample_t sampleType, Vship_Range_t range, bool ColorFamchromaPlane, float a){
-    int bitdepth = bitprecisionSample(sampleType);
+    uint32_t bitdepth = bitprecisionSample(sampleType);
     if (range == Vship_Range_t.Vship_RangeFull){
         float normalization = (1 << bitdepth) - 1; //float and half get 1
         //put in range [0, 1]
@@ -12,7 +12,7 @@ float fullRange(Vship_Sample_t sampleType, Vship_Range_t range, bool ColorFamchr
         if (bitdepth >= 8){
             //float or half have bitdepth 1. Here we have all uint types
             //-> range [0, 256[
-            a /= (1 << (bitdepth - 8));
+            a /= (1u << (bitdepth - 8u));
         } else {
             //float or half have bitdepth 1.
             //-> range [0, 256]
@@ -58,7 +58,7 @@ float pickValue(uint8_t* source_plane, uint64_t x, uint64_t stride, uint64_t wid
         } else {
             //only remains byteSample != 1 and non float type => byteSample == 2 uints
             //bitmasking to avoid assuming that garbage data is 0
-            int bitSample = bitprecisionSample(sampleType);
+            uint32_t bitSample = bitprecisionSample(sampleType);
             return reinterpret<uint16_t>(raw) & ((1u << bitSample)-1u);
         }
     } else {

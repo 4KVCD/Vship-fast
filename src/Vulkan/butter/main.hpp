@@ -183,8 +183,8 @@ public:
         this->height = VshipColorConvert::getColorspaceHeight(source_colorspace);
 
         //memory allocations
-        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        size_t tempSizeConverter2 = converter2.getTempMemoryNeeded();
+        size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
+        size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
         mem_d = deviceHelper->device.mallocDevice(sizeof(float)*width*height*(6) + std::max(sizeof(float)*width*height*(25), (uint64_t)(tempSizeConverter1+tempSizeConverter2)));
 
         //initial color planes

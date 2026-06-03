@@ -194,10 +194,10 @@ public:
         int64_t minheight = std::min(resize_height, source_height);
 
         //memory allocations
-        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        size_t tempSizeConverter2 = converter2.getTempMemoryNeeded();
+        size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
+        size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
         const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
-        size_t preLoadBufferSize = 2*(source_width*source_height*3*sizeof(float)+source_height*resize_width*sizeof(float));
+        size_t preLoadBufferSize = 2*(source_width*source_height*3*sizeof(float)+source_height*resize_width*sizeof(float)) + tempSizeConverter1 + tempSizeConverter2;
         size_t finalStageBufferSize = 2*sizeof(float)*pyramidSize*5 + sizeof(float)*pyramidSize*4;
         if (source_width < resize_width){
             //resize at the end
@@ -222,7 +222,7 @@ public:
         converter1.init(source_colorspace, VshipColorConvert::linRGB, deviceHelper, src1_d);
         converter2.init(source_colorspace2, VshipColorConvert::linRGB, deviceHelper, src2_d);
 
-        converterTempMemory = mem_d+sizeof(float)*6*source_width*source_height; //at that point in the treatment, this memory can be used by the converter
+        converterTempMemory = mem_d+sizeof(float)*6*source_width*source_height+source_height*resize_width*sizeof(float)*2; //at that point in the treatment, this memory can be used by the converter
 
         //assert they have the same width/height
         if (converter2.getWidth() != source_width || converter2.getHeight() != source_height){

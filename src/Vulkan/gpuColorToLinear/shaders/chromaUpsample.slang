@@ -43,7 +43,7 @@ void bicubicHorizontalCenterUpscaleX4(uint3 threadIdx : SV_GroupThreadID, uint3 
     int64_t x = (int64_t)(threadIdx.x + 16*blockIdx.x);
     x--;
     const int64_t y = (int64_t)(threadIdx.y + 16*blockIdx.y);
-    const int64_t smallwidth = (int64_t)((width-1)/2+1);
+    const int64_t smallwidth = (int64_t)((width-1)/4+1);
     float4 interpolator = getHorizontalInterpolator_device(src, x, y, smallwidth, height);
     //this interpolator is valid on interval [0, 1] representing [x, x+1]
     //we are Center so we are interested in values: 0.125, 0.375, 0.625 and 0.875
@@ -62,7 +62,7 @@ void bicubicHorizontalCenterUpscaleX4(uint3 threadIdx : SV_GroupThreadID, uint3 
 void bicubicHorizontalLeftUpscaleX4(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* src, uniform uint64_t width, uniform uint64_t height){
     const int64_t x = (int64_t)(threadIdx.x + 16*blockIdx.x);
     const int64_t y = (int64_t)(threadIdx.y + 16*blockIdx.y);
-    const int64_t smallwidth = (int64_t)((width-1)/2+1);
+    const int64_t smallwidth = (int64_t)((width-1)/4+1);
     float4 interpolator = getHorizontalInterpolator_device(src, x, y, smallwidth, height);
     //this interpolator is valid on interval [0, 1] representing [x, x+1]
     //we are Left so we are interested in values: 0, 0.25, 0.5 and 0.75 (0 is directly our value)

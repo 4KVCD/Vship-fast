@@ -29,6 +29,13 @@ int64_t getColorspaceHeight(Vship_Colorspace_t source_colorspace){
     return source_colorspace.target_height - source_colorspace.crop.top - source_colorspace.crop.bottom;
 }
 
+size_t getTempMemoryNeeded(Vship_Colorspace_t source_colorspace){
+    uint64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
+    uint64_t maxHeight= std::max(source_colorspace.target_height, source_colorspace.height);
+    uint maxplaneBuffer = 2;
+    return sizeof(float)*maxWidth*maxHeight*maxplaneBuffer;
+}
+
 //you will call placeToGPU to fill a new fresh buffer each frame to send to gpu because we can't prerecord that one
 //first call init to initialize it, then call placeConvert to add kernels into the buffer
 class Converter{

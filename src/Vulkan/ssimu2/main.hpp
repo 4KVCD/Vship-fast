@@ -118,8 +118,8 @@ public:
         converter1.init(source_colorspace, VshipColorConvert::linRGBBT709, deviceHelper, src1_d);
         converter2.init(source_colorspace2, VshipColorConvert::linRGBBT709, deviceHelper, src2_d);
 
-        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        size_t tempSizeConverter2 = converter2.getTempMemoryNeeded();
+        size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
+        size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
         converterTempMemory = deviceHelper->device.mallocDevice(tempSizeConverter1+tempSizeConverter2);
 
         //assert they have the same width/height
