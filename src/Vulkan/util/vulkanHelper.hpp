@@ -569,7 +569,9 @@ public:
         return pipeline;
     }
     void destroyComputePipeline(VkPipeline pipeline){
+#ifndef _WIN32
         vkDestroyPipeline(device, pipeline, nullptr);
+#endif
     }
     void* mallocHost(size_t size){
         auto [address, allocation] = malloc(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO, 0, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT);
@@ -849,10 +851,12 @@ public:
         queueLocks[myQueueID].unlock();
     }
     ~VkDeviceManager(){
+#ifndef _WIN32
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vmaDestroyAllocator(vmaAllocator);
-        delete[] queueLocks;
         vkDestroyDevice(device, nullptr);
+#endif
+        delete[] queueLocks;
     }
 };
 

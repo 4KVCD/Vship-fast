@@ -96,9 +96,11 @@ struct VshipDeviceHelper{
         //std::cout << "Pipeline Creation took " << millitaken << " ms" << std::endl;
     }
     ~VshipDeviceHelper(){
+#ifndef _WIN32
         for (const auto& [path, pipeline]: cachedPipeline){
             device.destroyComputePipeline(pipeline);
         }
+#endif
     }
 };
 
