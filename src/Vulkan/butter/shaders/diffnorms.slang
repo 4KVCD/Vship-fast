@@ -21,14 +21,14 @@ void sumreduce(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, 
     }
     GroupMemoryBarrierWithGroupSync();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thx + next < threadnum && (thx%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thx < next){
             sharedmem[thx] += sharedmem[thx+next];
             sharedmem[thx + 1024] += sharedmem[thx+next + 1024];
             sharedmem[thx + 2*1024] = max(sharedmem[thx + 2*1024], sharedmem[thx+next + 2*1024]);
         }
-        next *= 2;
         GroupMemoryBarrierWithGroupSync();
     }
     if (thx == 0){
@@ -59,14 +59,14 @@ void sumreducenorm(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Group
     }
     GroupMemoryBarrierWithGroupSync();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thx + next < threadnum && (thx%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thx < next){
             sharedmem[thx] += sharedmem[thx+next];
             sharedmem[thx + 1024] += sharedmem[thx+next + 1024];
             sharedmem[thx + 2*1024] = max(sharedmem[thx + 2*1024], sharedmem[thx+next + 2*1024]);
         }
-        next *= 2;
         GroupMemoryBarrierWithGroupSync();
     }
     if (thx == 0){

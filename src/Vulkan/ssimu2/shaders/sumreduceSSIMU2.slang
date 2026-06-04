@@ -23,15 +23,15 @@ void sumreduce(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, 
     }
     GroupMemoryBarrierWithGroupSync();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thx + next < threadnum && (thx%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thx < next){
             
             for (int i = 0; i < 6; i++){
                 sum[i][thx] += sum[i][thx+next];
             }
         }
-        next *= 2;
         GroupMemoryBarrierWithGroupSync();
     }
 

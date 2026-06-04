@@ -19,12 +19,12 @@ void reduceSum(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, 
 
     GroupMemoryBarrierWithGroupSync();
 
-    int next = 1;
-    while (next < 1024){
-        if (local_thid + next < 1024 && (local_thid%(next*2) == 0)){
+    int next = 1024;
+    while (next > 1){
+        next /= 2;
+        if (local_thid < next){
             pointerJumpingBuffer[local_thid] += pointerJumpingBuffer[local_thid+next];
         }
-        next *= 2;
         GroupMemoryBarrierWithGroupSync();
     }
 

@@ -130,14 +130,14 @@ void planescale_map(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Grou
     tampon[thid+1280] = (detailloss*detailloss)*(detailloss*detailloss);
     GroupMemoryBarrierWithGroupSync();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thid + next < threadnum && (thid%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thid < next){
             for (uint i = 0; i < 6; i++){
                 tampon[thid+256*i] += tampon[thid+256*i+next];
             }
         }
-        next *= 2;
         GroupMemoryBarrierWithGroupSync();
     }
     if (thid == 0){

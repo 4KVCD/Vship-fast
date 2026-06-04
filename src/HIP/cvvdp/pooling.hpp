@@ -24,13 +24,12 @@ __global__ void reduceSum(float* dst, float* src, int64_t size, bool divide){
 
     __syncthreads();
 
-    int next = 1;
-    while (next < threadnum){
-        //if (!applyInversePower && size == 1184264 && applyPower && power == 2 && global_thid == 13*1024 + 64) printf("width: %lld, next: %d, val: %f\n", size, next, pointerJumpingBuffer[local_thid]);
-        if (local_thid + next < threadnum && (local_thid%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (local_thid < next){
             pointerJumpingBuffer[local_thid] += pointerJumpingBuffer[local_thid+next];
         }
-        next *= 2;
         __syncthreads();
     }
 

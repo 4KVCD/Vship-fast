@@ -168,15 +168,15 @@ __global__ void sumreduce(float* dst, float* src, int widthPerElement){
     }
     __syncthreads();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thx + next < threadnum && (thx%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thx < next){
             #pragma unroll
             for (int i = 0; i < 6; i++){
                 sum[i][thx] += sum[i][thx+next];
             }
         }
-        next *= 2;
         __syncthreads();
     }
     if (thx == 0){
@@ -298,9 +298,10 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
     sumd4[thid] = tothe4th(detailloss);
     __syncthreads();
     //now we need to do some pointer jumping to regroup every block sums;
-    int next = 1;
-    while (next < threadnum){
-        if (thid + next < threadnum && (thid%(next*2) == 0)){
+    int next = threadnum;
+    while (next > 1){
+        next /= 2;
+        if (thid < next){
             sumssim1[thid] += sumssim1[thid+next];
             sumssim4[thid] += sumssim4[thid+next];
             suma1[thid] += suma1[thid+next];
@@ -308,7 +309,6 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
             sumd1[thid] += sumd1[thid+next];
             sumd4[thid] += sumd4[thid+next];
         }
-        next *= 2;
         __syncthreads();
     }
     if (thid == 0){
