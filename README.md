@@ -25,8 +25,11 @@ There are precompiled binaries ready to be used in the release section.
 
 If you want to use Vship with a pre-defined workflow, here are some projects
 featuring Vship:
+
+- [NVEnc](https://github.com/rigaya/NVEnc), [QSVEnc](https://github.com/rigaya/QSVEnc) : Frameworks to test HW encoding quality from [Rigaya](https://github.com/rigaya)
 - [Av1an](https://github.com/rust-av/Av1an): A Cross-platform command-line AV1 / VP9 / HEVC / H264 encoding framework with per scene quality encoding 
 - [xav](https://github.com/emrakyz/xav): A simpler alternative to Av1an dedicated to Target Quality Encoding trying to be as fast as possible.
+- [Auto-boost-essential](https://github.com/nekotrix/auto-boost-algorithm) : A python script improving efficiency of video encoding by varying parameters on scenes automatically.
 - [SSIMULACRApy](https://codeberg.org/Kosaka/ssimulacrapy): A Python script to
   compare videos and output their SSIMU2 scores using various metrics (by
   [Kosaka](https://codeberg.org/Kosaka))
@@ -37,8 +40,6 @@ featuring Vship:
   measuring temporal offset between two videos
 - [`chunknorris`](https://github.com/Boulder08/chunknorris): A python script
   to adjust the quality encoding parameters at each scene of a video base on objective metrics
-- [Media-Metrologist](https://github.com/Av1ation-Association/Media-Metrologist): Media-Metrologist is a library for measuring video quality using a suite of metrics on a per-scene and per-frame basis.
-- [`lvsfunc`](https://github.com/Jaded-Encoding-Thaumaturgy/lvsfunc): JET project containing various functions to help with video processing.
 
 ## Installation
 
