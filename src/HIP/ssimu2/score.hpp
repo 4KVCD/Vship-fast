@@ -132,12 +132,12 @@ SkipMap getSkipMap(int plane, int scale){
 }
 
 int64_t tempAllocsizeScore(int64_t width, int64_t height){
-    const int th_x = 16;
-    const int th_y = 16;
-    const int bl_x = (width-1)/th_x+1;
-    const int bl_y = (height-1)/th_y+1;
-    const int bl2_x = (width-1)/th_x/2+1;
-    const int bl2_y = (height-1)/th_y/2+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const int bl_x = (width-1)/(th_x*gaussianTileX)+1;
+    const int bl_y = (height-1)/(th_y*gaussianTileY)+1;
+    const int bl2_x = (width-1)/(th_x*gaussianTileX)/2+1;
+    const int bl2_y = (height-1)/(th_y*gaussianTileY)/2+1;
     return 108 + 6*bl_x*bl_y + 6*bl2_x*bl2_y + 6*((bl_x*bl_y-1)/1024+1) + 6*((bl2_x*bl2_y-1)/1024+1);
 }
 
@@ -191,21 +191,22 @@ __global__ void sumreduce(float* dst, float* src, int widthPerElement){
 //th = dim3(16, 16)
 template<bool skipSSIM, bool skipArtifact, bool skipDetailloss>
 __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
-    const int64_t x = (threadIdx.x + blockIdx.x*16);
-    const int64_t y = (threadIdx.y + blockIdx.y*16);
+    const int64_t x = (threadIdx.x + blockIdx.x*gaussianThx);
+    const int64_t y = (threadIdx.y + blockIdx.y*gaussianThy);
 
-    const int64_t threadnum = 256;
-    const int64_t thid = threadIdx.y*16 + threadIdx.x;
+    const int64_t threadnum = gaussianThx*gaussianThy;
+    const int64_t thid = threadIdx.y*gaussianThx + threadIdx.x;
 
     constexpr uint gaussianBuffers = (skipSSIM) ? 2 : 3;
-    __shared__ float sharedmem[32*32 * gaussianBuffers]; //12288B
+    constexpr uint tamponSize = std::max(tamponWidth*tamponHeight * gaussianBuffers, 6u*(uint)threadnum);
+    __shared__ float sharedmem[tamponSize]; //12288B
     //explicit image cache
     float* im1tampon = sharedmem;
-    float* im2tampon = sharedmem+32*32;
+    float* im2tampon = sharedmem+tamponWidth*tamponHeight;
     //working buffer
     float* gaussiantampon;
     if constexpr (!skipSSIM){
-        gaussiantampon = sharedmem+2*32*32;
+        gaussiantampon = sharedmem+2*tamponWidth*tamponHeight;
     } else {
         (void)gaussiantampon;
     }
@@ -220,8 +221,8 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
 
     //retrieve the value of im that we will use from the precreated tampon
     if constexpr (!skipArtifact || !skipDetailloss){
-        im1p = im1tampon[(threadIdx.y+8)*32+threadIdx.x+8];
-        im2p = im2tampon[(threadIdx.y+8)*32+threadIdx.x+8];
+        im1p = im1tampon[(threadIdx.y+gaussianSize)*tamponWidth+threadIdx.x+gaussianSize];
+        im2p = im2tampon[(threadIdx.y+gaussianSize)*tamponWidth+threadIdx.x+gaussianSize];
         __syncthreads();
     } else {
         //unused
@@ -231,23 +232,20 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
 
     if constexpr (!skipSSIM){
         //product blur a*b
-        gaussiantampon[thid] = im1tampon[thid]*im2tampon[thid];
-        gaussiantampon[thid+256] = im1tampon[thid+256]*im2tampon[thid+256];
-        gaussiantampon[thid+512] = im1tampon[thid+512]*im2tampon[thid+512];
-        gaussiantampon[thid+768] = im1tampon[thid+768]*im2tampon[thid+768];
+        #pragma unroll
+        for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
+            gaussiantampon[i] = im1tampon[i]*im2tampon[i];
+        }
         __syncthreads();
         s12 = GaussianSmart_Device(gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
 
         //sum squared blur (a+b)**2
         float tmp;
-        tmp = im1tampon[thid]+im2tampon[thid];
-        gaussiantampon[thid] = tmp*tmp;
-        tmp = im1tampon[thid+256]+im2tampon[thid+256];
-        gaussiantampon[thid+256] = tmp*tmp;
-        tmp = im1tampon[thid+512]+im2tampon[thid+512];
-        gaussiantampon[thid+512] = tmp*tmp;
-        tmp = im1tampon[thid+768]+im2tampon[thid+768];
-        gaussiantampon[thid+768] = tmp*tmp;
+        #pragma unroll
+        for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
+            tmp = im1tampon[i]+im2tampon[i];
+            gaussiantampon[i] = tmp*tmp;
+        }
         __syncthreads();
         const float sumsquared = GaussianSmart_Device(gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
         //we can deduce a**2 + b**2 now following linearity of gaussian blur
@@ -322,10 +320,10 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
 }
 
 void planescale_map_noaccumulate(float* dst, float* im1, float* im2, int64_t width, int64_t height, GaussianHandle& gaussianhandle, SkipMap skipMap, hipStream_t stream){
-    const int th_x = 16;
-    const int th_y = 16;
-    const int bl_x = (width-1)/th_x+1;
-    const int bl_y = (height-1)/th_y+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const int bl_x = (width-1)/(th_x*gaussianTileX)+1;
+    const int bl_y = (height-1)/(th_y*gaussianTileY)+1;
     if (skipMap.ssim){
         if (skipMap.artifact){
             if (skipMap.detailloss){
@@ -363,7 +361,7 @@ void planescale_map(float* outbuffer, float* im1, float* im2, float* temp, int64
     //skipped values can remain unset
     if (skipMap.ssim && skipMap.artifact && skipMap.detailloss) return;
 
-    int64_t firstbufferSize = ((width-1)/16+1)*((height-1)/16+1);
+    int64_t firstbufferSize = ((width-1)/(gaussianThx*gaussianTileX)+1)*((height-1)/(gaussianThy*gaussianTileY)+1);
     float* tmps[2] = {temp, temp+6*firstbufferSize}; //of size firstbufferSize*6 and size 6*((firstbufferSize-1) / 1024+1)
     planescale_map_noaccumulate((firstbufferSize == 1) ? outbuffer:tmps[0], im1, im2, width, height, gaussianhandle, skipMap, stream);
 
@@ -390,10 +388,10 @@ std::vector<float> allscore_map(float* im1[3], float* im2[3], float* temp, int64
     GPU_CHECK(hipStreamWaitEvent(streams[0], events[1]));
 
     float* temp1 = temp+108;
-    const int th_x = 16;
-    const int th_y = 16;
-    const int bl_x = (basewidth-1)/th_x+1;
-    const int bl_y = (baseheight-1)/th_y+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const int bl_x = (basewidth-1)/(th_x*gaussianTileX)+1;
+    const int bl_y = (baseheight-1)/(th_y*gaussianTileY)+1;
     float* temp2 = temp1+6*bl_x*bl_y + 6*((bl_x*bl_y-1)/1024+1);
 
     int64_t w = basewidth;

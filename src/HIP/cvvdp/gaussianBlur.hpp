@@ -2,23 +2,25 @@
 
 namespace cvvdp{
 
-//GAUSSIANSIZE is 8 which means 0.1% error for sigma 3 (exp(-64/9))
+constexpr int gaussianSize = 8;
+
+//gaussianSize is 8 which means 0.1% error for sigma 3 (exp(-64/9))
 class GaussianHandle{
 public:
     float* gaussiankernel_d = NULL;
     float* gaussiankernel_integral_d = NULL;
     void init(){
         const float sigma = pu_dilate;
-        float gaussiankernel[4*GAUSSIANSIZE+3];
-        gaussiankernel[2*GAUSSIANSIZE+1] = 0; //will be integral
-        for (int i = 0; i < 2*GAUSSIANSIZE+1; i++){
-            gaussiankernel[i] = std::exp(-(GAUSSIANSIZE-i)*(GAUSSIANSIZE-i)/(2*sigma*sigma))/(std::sqrt(TAU*sigma*sigma));
-            gaussiankernel[2*GAUSSIANSIZE+2+i] = gaussiankernel[2*GAUSSIANSIZE+1+i] + gaussiankernel[i];
+        float gaussiankernel[4*gaussianSize+3];
+        gaussiankernel[2*gaussianSize+1] = 0; //will be integral
+        for (int i = 0; i < 2*gaussianSize+1; i++){
+            gaussiankernel[i] = std::exp(-(gaussianSize-i)*(gaussianSize-i)/(2*sigma*sigma))/(std::sqrt(TAU*sigma*sigma));
+            gaussiankernel[2*gaussianSize+2+i] = gaussiankernel[2*gaussianSize+1+i] + gaussiankernel[i];
         }
     
-        GPU_CHECK(hipMalloc(&gaussiankernel_d, sizeof(float)*(4*GAUSSIANSIZE+3)));
-        GPU_CHECK(hipMemcpyHtoD((hipDeviceptr_t)gaussiankernel_d, gaussiankernel, (4*GAUSSIANSIZE+3)*sizeof(float)));
-        gaussiankernel_integral_d = gaussiankernel_d + 2*GAUSSIANSIZE+1;
+        GPU_CHECK(hipMalloc(&gaussiankernel_d, sizeof(float)*(4*gaussianSize+3)));
+        GPU_CHECK(hipMemcpyHtoD((hipDeviceptr_t)gaussiankernel_d, gaussiankernel, (4*gaussianSize+3)*sizeof(float)));
+        gaussiankernel_integral_d = gaussiankernel_d + 2*gaussianSize+1;
     }
     void destroy(){
         GPU_CHECK(hipFree(gaussiankernel_d));

@@ -1,20 +1,33 @@
 namespace ssimu2{
 
+//for now only accepts squares Tiling (see GaussianSmart_device out and tot arrays)
+//only allows powers of 2 for Thx and Thy due to pointer jumping (8/8 16/16 and 32/32)
+constexpr int gaussianThx = 16;
+constexpr int gaussianThy = 16;
+constexpr int gaussianSize = 8;
+
+//only tile 1x1 works for now
+constexpr int gaussianTileX = 1;
+constexpr int gaussianTileY = 1;
+
+constexpr int tamponWidth = (gaussianThx*gaussianTileX + 2*gaussianSize);
+constexpr int tamponHeight = (gaussianThy*gaussianTileY + 2*gaussianSize);
+
 class GaussianHandle{
 public:
     float* gaussiankernel_d = NULL;
     float* gaussiankernel_integral_d = NULL;
     void init(){
-        float gaussiankernel[4*GAUSSIANSIZE+3];
-        gaussiankernel[2*GAUSSIANSIZE+1] = 0; //will be integral
-        for (int i = 0; i < 2*GAUSSIANSIZE+1; i++){
-            gaussiankernel[i] = std::exp(-(GAUSSIANSIZE-i)*(GAUSSIANSIZE-i)/(2*SIGMA*SIGMA))/(std::sqrt(TAU*SIGMA*SIGMA));
-            gaussiankernel[2*GAUSSIANSIZE+2+i] = gaussiankernel[2*GAUSSIANSIZE+1+i] + gaussiankernel[i];
+        float gaussiankernel[4*gaussianSize+3];
+        gaussiankernel[2*gaussianSize+1] = 0; //will be integral
+        for (int i = 0; i < 2*gaussianSize+1; i++){
+            gaussiankernel[i] = std::exp(-(gaussianSize-i)*(gaussianSize-i)/(2*SIGMA*SIGMA))/(std::sqrt(TAU*SIGMA*SIGMA));
+            gaussiankernel[2*gaussianSize+2+i] = gaussiankernel[2*gaussianSize+1+i] + gaussiankernel[i];
         }
     
-        GPU_CHECK(hipMalloc(&gaussiankernel_d, sizeof(float)*(4*GAUSSIANSIZE+3)));
-        GPU_CHECK(hipMemcpyHtoD((hipDeviceptr_t)gaussiankernel_d, gaussiankernel, (4*GAUSSIANSIZE+3)*sizeof(float)));
-        gaussiankernel_integral_d = gaussiankernel_d + 2*GAUSSIANSIZE+1;
+        GPU_CHECK(hipMalloc(&gaussiankernel_d, sizeof(float)*(4*gaussianSize+3)));
+        GPU_CHECK(hipMemcpyHtoD((hipDeviceptr_t)gaussiankernel_d, gaussiankernel, (4*gaussianSize+3)*sizeof(float)));
+        gaussiankernel_integral_d = gaussiankernel_d + 2*gaussianSize+1;
     }
     void destroy(){
         GPU_CHECK(hipFree(gaussiankernel_d));
@@ -24,56 +37,90 @@ public:
 __device__ void GaussianSmartSharedLoad(float* tampon, const float* src, int64_t x, int64_t y, int64_t width, int64_t height){
     const int thx = threadIdx.x;
     const int thy = threadIdx.y;
-    const int tampon_base_x = x - thx - 8;
-    const int tampon_base_y = y - thy - 8;
+    const int tampon_base_x = x - thx - gaussianSize;
+    const int tampon_base_y = y - thy - gaussianSize;
+    const int thid = thy*gaussianThx+thx;
 
-    //fill tampon
-    tampon[thy*32+thx] = (tampon_base_x + thx >= 0 && tampon_base_x + thx < width && tampon_base_y + thy >= 0 && tampon_base_y + thy < height) ? src[(tampon_base_y+thy)*width + tampon_base_x+thx] : 0.f;
-    tampon[(thy+16)*32+thx] = (tampon_base_x + thx >= 0 && tampon_base_x + thx < width && tampon_base_y + thy + 16 >= 0 && tampon_base_y + thy + 16 < height) ? src[(tampon_base_y+thy+16)*width + tampon_base_x+thx] : 0.f;
-    tampon[thy*32+thx+16] = (tampon_base_x + thx +16 >= 0 && tampon_base_x + thx +16 < width && tampon_base_y + thy >= 0 && tampon_base_y + thy < height) ? src[(tampon_base_y+thy)*width + tampon_base_x+thx+16] : 0.f;
-    tampon[(thy+16)*32+thx+16] = (tampon_base_x + thx +16 >= 0 && tampon_base_x + thx +16 < width && tampon_base_y + thy + 16 >= 0 && tampon_base_y + thy + 16 < height) ? src[(tampon_base_y+thy+16)*width + tampon_base_x+thx+16] : 0.f;
+    #pragma unroll
+    for (int i = thid; i < tamponWidth*tamponHeight; i+=gaussianThx*gaussianThy){
+        const int tamponX = i%tamponWidth;
+        const int tamponY = i/tamponWidth;
+
+        tampon[i] = (tampon_base_x + tamponX >= 0 && tampon_base_x + tamponX < width && tampon_base_y + tamponY >= 0 && tampon_base_y + tamponY < height) ? src[(tampon_base_y+tamponY)*width + tampon_base_x+tamponX] : 0.f;
+    }
     __syncthreads();
 }
 
-//a whole block of 16x16 should into there, x and y corresponds to their real position in the src (or slighly outside)
-//at the end, the central 16*16 part of tampon contains the blurred value for each thread
-//tampon is of size 32*32
+//at the end, the central (tamponWidth-gaussianSize*2)*(tamponHeight-gaussianSize*2) part of tampon contains the blurred value for each thread
 __device__ float GaussianSmart_Device(float* tampon, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
     const int thx = threadIdx.x;
     const int thy = threadIdx.y;
 
-    //horizontalBlur on tampon restraint into rectangle [8 - 24][0 - 32] -> 2 pass per thread
+    float tot[gaussianTileX];
+    float out[gaussianTileX][gaussianTileY+1];
+    for (int i = 0; i < gaussianTileX; i++) for (int j = 0; j < gaussianTileY+1; j++) out[i][j] = 0.f;
 
-    //1st pass in [8 - 24][0 - 16]
-    float tot;
-    float out = 0.f;
-    float out2 = 0.f;
-    //border handling precompute
-    int beg = max((int64_t)0, x-8)-(x-8);
-    int end2 = min(width, x+9)-min(width, (x-8));
-    tot = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
-    for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-        out += tampon[thy*32 + thx+i]*gaussiankernel[i];
-        //2nd pass in [8 - 24][16 - 32]
-        out2 += tampon[(thy+16)*32 + thx+i]*gaussiankernel[i];
+    //horizontal blur on each X tile columns (each of size gaussianTileX * tamponHeight)
+    #pragma unroll
+    for (int region_x = 0; region_x < gaussianTileX; region_x++){
+
+        //border handling precompute
+        const int beg = max((int64_t)0, x-gaussianSize+region_x*gaussianThx)-(x-gaussianSize+region_x*gaussianThx);
+        const int end2 = min(width, x+gaussianSize+1+region_x*gaussianThx)-min(width, (x-gaussianSize+region_x*gaussianThx));
+        tot[region_x] = gaussiankernel_integral[end2]-gaussiankernel_integral[beg];
+
+        //if (2*gaussianSize)%gaussianThy != 0, we will have idle threads at last step
+        int tileRow = 0;
+        #pragma unroll
+        for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
+            for (int i = 0; i < 2*gaussianSize+1; i++){ //starting gaussianSize to the left and going gaussianSize to the right
+                out[region_x][tileRow] += tampon[tamponY*tamponWidth + thx+i+region_x*gaussianThx]*gaussiankernel[i];
+            }
+            tileRow++;
+        }
+    }
+
+    //rewrite result in tampon and normalize
+    __syncthreads();
+    #pragma unroll
+    for (int region_x = 0; region_x < gaussianTileX; region_x++){
+        int tileRow = 0;
+        #pragma unroll
+        for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
+            tampon[(tamponY)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_x][tileRow]/tot[region_x];
+            tileRow++;
+        }
+    }
+    __syncthreads();
+
+    //verticalBlur on tampon restraint into final center rectangle.
+    #pragma unroll
+    for (int region_y = 0; region_y < gaussianTileY; region_y++){
+
+        //border handling precompute
+        const int beg = max((int64_t)0, y-gaussianSize+region_y*gaussianThy)-(y-gaussianSize+region_y*gaussianThy);
+        const int end2 = min(height, y+gaussianSize+1+region_y*gaussianThy)-min(height, (y-gaussianSize+region_y*gaussianThy));
+        tot[region_y] = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
+
+        #pragma unroll
+        for (int region_x = 0; region_x < gaussianTileX; region_x++){
+            out[region_y][region_x] = 0;
+            for (int i = 0; i < 2*gaussianSize+1; i++){ //starting 8 to the left and going 8 to the right
+                out[region_y][region_x] += tampon[(thy+i+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx]*gaussiankernel[i];
+            }
+        }
     }
 
     __syncthreads();
-    tampon[thy*32 + thx+8] = out/tot;
-    tampon[(thy+16)*32 + thx+8] = out2/tot;
-    __syncthreads();
-
-    //verticalBlur on tampon restraint into rectangle [8 - 24][8 - 24] -> 1 pass per thread
-    out = 0.f;
-    beg = max((int64_t)0, y-8)-(y-8);
-    end2 = min(height, y+9)-min(height, (y-8));
-    tot = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
-    for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-        out += tampon[(thy+i)*32 + thx+8]*gaussiankernel[i];
+    #pragma unroll
+    for (int region_y = 0; region_y < gaussianTileY; region_y++){
+        #pragma unroll
+        for (int region_x = 0; region_x < gaussianTileX; region_x++){
+            tampon[(thy+gaussianSize+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_y][region_x]/tot[region_y];
+        }
     }
-
     __syncthreads();
-    return out/tot;
+    return out[0][0]/tot[0];
 }
 
 }

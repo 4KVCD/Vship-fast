@@ -97,7 +97,6 @@ using uint = unsigned int;
     #define aligned_alloc(a, b) _aligned_malloc(b, a)
 #endif
 
-#define GAUSSIANSIZE 8
 #define SIGMA 1.5f
 #define PI  3.14159265359
 #define TAU 6.28318530718
