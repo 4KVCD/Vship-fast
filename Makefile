@@ -51,10 +51,10 @@ build: src/VshipLib.cpp .FORCE
 	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" --offload-arch=native -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"
 
 buildcuda: src/VshipLib.cpp .FORCE
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" -arch=native -shared $(mitigateAsync) $(fpiccuda) --expt-relaxed-constexpr -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" -arch=native -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
 
 buildcudaall: src/VshipLib.cpp .FORCE
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(mitigateAsync) $(fpiccuda) --expt-relaxed-constexpr -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
 
 buildall: src/VshipLib.cpp .FORCE
 	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"

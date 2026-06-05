@@ -187,18 +187,23 @@ __global__ void sumreduce(float* dst, float* src, int widthPerElement){
     }
 }
 
+//allows to avoid using std::max in device code which requires an extra cuda compilation argument
+__device__ constexpr uint constexprMaxDevice(uint a, uint b){
+    return (a < b) ? b : a;
+}
+
 //dst of size (6*grid_size_x*grid_size_y)
 //th = dim3(16, 16)
 template<bool skipSSIM, bool skipArtifact, bool skipDetailloss>
 __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
-    const int64_t x = (threadIdx.x + blockIdx.x*gaussianThx);
-    const int64_t y = (threadIdx.y + blockIdx.y*gaussianThy);
+    const int64_t x = (threadIdx.x + blockIdx.x*gaussianThx*gaussianTileX);
+    const int64_t y = (threadIdx.y + blockIdx.y*gaussianThy*gaussianTileY);
 
     const int64_t threadnum = gaussianThx*gaussianThy;
     const int64_t thid = threadIdx.y*gaussianThx + threadIdx.x;
 
     constexpr uint gaussianBuffers = (skipSSIM) ? 2 : 3;
-    constexpr uint tamponSize = std::max(tamponWidth*tamponHeight * gaussianBuffers, 6u*(uint)threadnum);
+    constexpr uint tamponSize = constexprMaxDevice(tamponWidth*tamponHeight * gaussianBuffers, 6u*(uint)threadnum);
     __shared__ float sharedmem[tamponSize]; //12288B
     //explicit image cache
     float* im1tampon = sharedmem;
@@ -216,13 +221,25 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
     GaussianSmartSharedLoad(im2tampon, im2, x, y, width, height); 
 
     //our final values which may be unset depending on skip
-    float im1p, im2p, m1, m2, s12, s11_s22;
-    float ssim = 0, artifact = 0, detailloss = 0;
+    float im1p[gaussianTileX*gaussianTileY], im2p[gaussianTileX*gaussianTileY], m1[gaussianTileX*gaussianTileY], m2[gaussianTileX*gaussianTileY], s12[gaussianTileX*gaussianTileY], s11_s22[gaussianTileX*gaussianTileY];
+    float ssim[gaussianTileX*gaussianTileY], artifact[gaussianTileX*gaussianTileY], detailloss[gaussianTileX*gaussianTileY];
+    #pragma unroll
+    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
+        ssim[i] = 0;
+        artifact[i] = 0;
+        detailloss[i] = 0;
+    }
 
     //retrieve the value of im that we will use from the precreated tampon
     if constexpr (!skipArtifact || !skipDetailloss){
-        im1p = im1tampon[(threadIdx.y+gaussianSize)*tamponWidth+threadIdx.x+gaussianSize];
-        im2p = im2tampon[(threadIdx.y+gaussianSize)*tamponWidth+threadIdx.x+gaussianSize];
+        #pragma unroll
+        for (int region_y = 0; region_y < gaussianTileY; region_y++){
+            #pragma unroll
+            for (int region_x = 0; region_x < gaussianTileX; region_x++){
+                im1p[region_y*gaussianTileX+region_x] = im1tampon[(threadIdx.y+gaussianSize+gaussianThy*region_y)*tamponWidth+threadIdx.x+gaussianSize+gaussianThx*region_x];
+                im2p[region_y*gaussianTileX+region_x] = im2tampon[(threadIdx.y+gaussianSize+gaussianThy*region_y)*tamponWidth+threadIdx.x+gaussianSize+gaussianThx*region_x];
+            }
+        }
         __syncthreads();
     } else {
         //unused
@@ -237,7 +254,7 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
             gaussiantampon[i] = im1tampon[i]*im2tampon[i];
         }
         __syncthreads();
-        s12 = GaussianSmart_Device(gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
+        GaussianSmart_Device(s12, gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
 
         //sum squared blur (a+b)**2
         float tmp;
@@ -247,35 +264,44 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
             gaussiantampon[i] = tmp*tmp;
         }
         __syncthreads();
-        const float sumsquared = GaussianSmart_Device(gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
+        float sumsquared[gaussianTileX*gaussianTileY];
+        GaussianSmart_Device(sumsquared, gaussiantampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
         //we can deduce a**2 + b**2 now following linearity of gaussian blur
-        s11_s22 = sumsquared - 2*s12;
+        #pragma unroll
+        for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
+            s11_s22[i] = sumsquared[i] - 2*s12[i];
+        }
     } else {
         (void)s12; (void)s11_s22; //unused
     }
 
     //then we blur our im1buffer and im2buffer to get m1 and m2
-    m1 = GaussianSmart_Device(im1tampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    m2 = GaussianSmart_Device(im2tampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
+    GaussianSmart_Device(m1, im1tampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
+    GaussianSmart_Device(m2, im2tampon, x, y, width, height, gaussiankernel, gaussiankernel_integral);
 
     //if (x == 0 && y == 0) printf("im1 %f im2 %f m1 %f m2 %f s12 %f s1122 %f\n", im1p, im2p, m1, m2, s12, s11_s22);
     //now we have im1p, im2p, m1, m2 and (s12, s11_s22 if ssim enabled)
-    if (x < width && y < height){
-        if constexpr (!skipSSIM){
-            const float m11 = m1*m1;
-            const float m22 = m2*m2;
-            const float m12 = m1*m2;
-            const float m_diff = m1-m2;
-            const float num_m = fmaf(m_diff, m_diff*-1.0f, 1.0f);
-            const float num_s = fmaf(s12 - m12, 2.0f, 0.0009f);
-            const float denom_s = s11_s22 - m11 - m22 + 0.0009f;
-            ssim = max(1.0f - ((num_m * num_s)/denom_s), 0.0f);
-        }
-        if constexpr (!skipArtifact || !skipDetailloss){
-            //edge diff
-            const float v1 = (abs(im2p - m2)+1.0f) / (abs(im1p - m1)+1.0f) - 1.0f;
-            if constexpr (!skipArtifact) artifact = max(v1, 0.0f);
-            if constexpr (!skipDetailloss) detailloss = max(v1*-1.0f, 0.0f);
+    #pragma unroll
+    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
+        const int region_x = i%gaussianTileX;
+        const int region_y = i/gaussianTileX;
+        if (x+gaussianThx*region_x < width && y+gaussianThy*region_y < height){
+            if constexpr (!skipSSIM){
+                const float m11 = m1[i]*m1[i];
+                const float m22 = m2[i]*m2[i];
+                const float m12 = m1[i]*m2[i];
+                const float m_diff = m1[i]-m2[i];
+                const float num_m = fmaf(m_diff, m_diff*-1.0f, 1.0f);
+                const float num_s = fmaf(s12[i] - m12, 2.0f, 0.0009f);
+                const float denom_s = s11_s22[i] - m11 - m22 + 0.0009f;
+                ssim[i] = max(1.0f - ((num_m * num_s)/denom_s), 0.0f);
+            }
+            if constexpr (!skipArtifact || !skipDetailloss){
+                //edge diff
+                const float v1 = (abs(im2p[i] - m2[i])+1.0f) / (abs(im1p[i] - m1[i])+1.0f) - 1.0f;
+                if constexpr (!skipArtifact) artifact[i] = max(v1, 0.0f);
+                if constexpr (!skipDetailloss) detailloss[i] = max(v1*-1.0f, 0.0f);
+            }
         }
     }
 
@@ -288,12 +314,21 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
     float* sumd1 = sharedmem+4*threadnum; //size sizeof(float)*threadnum
     float* sumd4 = sharedmem+5*threadnum; //size sizeof(float)*threadnum
 
-    sumssim1[thid] = ssim;
-    sumssim4[thid] = tothe4th(ssim);
-    suma1[thid] = artifact;
-    suma4[thid] = tothe4th(artifact);
-    sumd1[thid] = detailloss;
-    sumd4[thid] = tothe4th(detailloss);
+    sumssim1[thid] = 0.f;
+    sumssim4[thid] = 0.f;
+    suma1[thid] = 0.f;
+    suma4[thid] = 0.f;
+    sumd1[thid] = 0.f;
+    sumd4[thid] = 0.f;
+    #pragma unroll
+    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
+        sumssim1[thid] += ssim[i];
+        sumssim4[thid] += tothe4th(ssim[i]);
+        suma1[thid] += artifact[i];
+        suma4[thid] += tothe4th(artifact[i]);
+        sumd1[thid] += detailloss[i];
+        sumd4[thid] += tothe4th(detailloss[i]);
+    }
     __syncthreads();
     //now we need to do some pointer jumping to regroup every block sums;
     int next = threadnum;

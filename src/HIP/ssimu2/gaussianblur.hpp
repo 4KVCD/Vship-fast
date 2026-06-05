@@ -4,11 +4,11 @@ namespace ssimu2{
 //only allows powers of 2 for Thx and Thy due to pointer jumping (8/8 16/16 and 32/32)
 constexpr int gaussianThx = 16;
 constexpr int gaussianThy = 16;
+//Optimization Island in gaussianSize lies in gaussianTh/2
 constexpr int gaussianSize = 8;
 
-//only tile 1x1 works for now
-constexpr int gaussianTileX = 1;
-constexpr int gaussianTileY = 1;
+constexpr int gaussianTileX = 2;
+constexpr int gaussianTileY = 2;
 
 constexpr int tamponWidth = (gaussianThx*gaussianTileX + 2*gaussianSize);
 constexpr int tamponHeight = (gaussianThy*gaussianTileY + 2*gaussianSize);
@@ -51,8 +51,9 @@ __device__ void GaussianSmartSharedLoad(float* tampon, const float* src, int64_t
     __syncthreads();
 }
 
+//the following comment is only true if you uncomment putting the end result in the tampon, currently, the result is only put in output
 //at the end, the central (tamponWidth-gaussianSize*2)*(tamponHeight-gaussianSize*2) part of tampon contains the blurred value for each thread
-__device__ float GaussianSmart_Device(float* tampon, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
+__device__ void GaussianSmart_Device(float output[gaussianTileX*gaussianTileY], float* tampon, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
     const int thx = threadIdx.x;
     const int thy = threadIdx.y;
 
@@ -111,7 +112,17 @@ __device__ float GaussianSmart_Device(float* tampon, int64_t x, int64_t y, int64
         }
     }
 
+    //put data to result, one data point per Tile
+    #pragma unroll
+    for (int region_y = 0; region_y < gaussianTileY; region_y++){
+        #pragma unroll
+        for (int region_x = 0; region_x < gaussianTileX; region_x++){
+            output[region_y*gaussianTileX+region_x] = out[region_y][region_x]/tot[region_y];
+        }
+    }
     __syncthreads();
+    //put data back to tampon -> extra operations and sync
+    /*
     #pragma unroll
     for (int region_y = 0; region_y < gaussianTileY; region_y++){
         #pragma unroll
@@ -120,7 +131,7 @@ __device__ float GaussianSmart_Device(float* tampon, int64_t x, int64_t y, int64
         }
     }
     __syncthreads();
-    return out[0][0]/tot[0];
+    */
 }
 
 }
