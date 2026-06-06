@@ -132,12 +132,12 @@ SkipMap getSkipMap(int plane, int scale){
 }
 
 int64_t tempAllocsizeScore(int64_t width, int64_t height){
-    const int th_x = 16;
-    const int th_y = 16;
-    const int bl_x = (width-1)/th_x+1;
-    const int bl_y = (height-1)/th_y+1;
-    const int bl2_x = (width-1)/th_x/2+1;
-    const int bl2_y = (height-1)/th_y/2+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const int bl_x = (width-1)/(th_x*gaussianTileX)+1;
+    const int bl_y = (height-1)/(th_y*gaussianTileY)+1;
+    const int bl2_x = (width-1)/(th_x*gaussianTileX)/2+1;
+    const int bl2_y = (height-1)/(th_y*gaussianTileY)/2+1;
     return 108 + 6*bl_x*bl_y + 6*bl2_x*bl2_y + 6*((bl_x*bl_y-1)/1024+1) + 6*((bl2_x*bl2_y-1)/1024+1);
 }
 
@@ -158,10 +158,10 @@ void placeSumReduce(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, Vk
 
 void placePlanescale_map_noaccumulate(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress im1, VkDeviceAddress im2, int64_t width, int64_t height, GaussianHandle& gaussianhandle, SkipMap skipMap){
     if (skipMap.ssim && skipMap.artifact && skipMap.detailloss) return;
-    const int th_x = 16;
-    const int th_y = 16;
-    const uint64_t bl_x = (width-1)/th_x+1;
-    const uint64_t bl_y = (height-1)/th_y+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const uint64_t bl_x = (width-1)/(th_x*gaussianTileX)+1;
+    const uint64_t bl_y = (height-1)/(th_y*gaussianTileY)+1;
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["scoreSSIMU2.spv:planescale_map"];
     
@@ -182,7 +182,7 @@ void placePlanescale_map(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuf
     //skipped values can remain unset
     if (skipMap.ssim && skipMap.artifact && skipMap.detailloss) return;
 
-    int64_t firstbufferSize = ((width-1)/16+1)*((height-1)/16+1);
+    int64_t firstbufferSize = ((width-1)/(gaussianThx*gaussianTileX)+1)*((height-1)/(gaussianThy*gaussianTileY)+1);
     VkDeviceAddress tmps[2] = {temp, temp+6*sizeof(float)*firstbufferSize}; //of size firstbufferSize*6 and size 6*((firstbufferSize-1) / 1024+1)
     placePlanescale_map_noaccumulate(deviceHelper, cmdBuff, (firstbufferSize == 1) ? outbuffer:tmps[0], im1, im2, width, height, gaussianhandle, skipMap);
 
@@ -202,10 +202,10 @@ void placeAllscore_map(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff,
     VkDeviceAddress outbuffer_d = temp;
 
     VkDeviceAddress temp1 = temp+sizeof(float)*108;
-    const int th_x = 16;
-    const int th_y = 16;
-    const int bl_x = (basewidth-1)/th_x+1;
-    const int bl_y = (baseheight-1)/th_y+1;
+    const int th_x = gaussianThx;
+    const int th_y = gaussianThy;
+    const int bl_x = (basewidth-1)/(th_x*gaussianTileX)+1;
+    const int bl_y = (baseheight-1)/(th_y*gaussianTileY)+1;
     VkDeviceAddress temp2 = temp1+sizeof(float)*(6*bl_x*bl_y + 6*((bl_x*bl_y-1)/1024+1));
 
     int64_t w = basewidth;
