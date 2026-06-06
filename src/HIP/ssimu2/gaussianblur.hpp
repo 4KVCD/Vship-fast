@@ -41,7 +41,6 @@ __device__ void GaussianSmartSharedLoad(float* tampon, const float* src, int64_t
     const int tampon_base_y = y - thy - gaussianSize;
     const int thid = thy*gaussianThx+thx;
 
-    #pragma unroll
     for (int i = thid; i < tamponWidth*tamponHeight; i+=gaussianThx*gaussianThy){
         const int tamponX = i%tamponWidth;
         const int tamponY = i/tamponWidth;

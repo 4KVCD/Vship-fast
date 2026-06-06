@@ -249,7 +249,6 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
 
     if constexpr (!skipSSIM){
         //product blur a*b
-        #pragma unroll
         for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
             gaussiantampon[i] = im1tampon[i]*im2tampon[i];
         }
@@ -258,7 +257,6 @@ __global__ void planescale_map_Kernel(float* dst, float* im1, float* im2, int64_
 
         //sum squared blur (a+b)**2
         float tmp;
-        #pragma unroll
         for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
             tmp = im1tampon[i]+im2tampon[i];
             gaussiantampon[i] = tmp*tmp;
