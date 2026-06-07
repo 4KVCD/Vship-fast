@@ -199,15 +199,15 @@ endif
 
 buildcuda: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 $(CXXFLAGS) -I "$(current_dir)include" -arch=native -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 $(CXXFLAGS) -I "$(current_dir)include" -arch=native -shared $(mitigateAsync) -Xcompiler -fPIC -o "$(current_dir)libvship$(dllend)"
 
 buildcudaall: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
-	nvcc -x cu src/VshipLib.cpp -g -std=c++17 $(CXXFLAGS) -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(mitigateAsync) $(fpiccuda) -o "$(current_dir)libvship$(dllend)"
+	nvcc -x cu src/VshipLib.cpp -g -std=c++17 $(CXXFLAGS) -I "$(current_dir)include" $(fatbincompresscuda) -arch=all -shared $(mitigateAsync) -Xcompiler -fPIC -o "$(current_dir)libvship$(dllend)"
 
 buildall: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
-	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes $(CXXFLAGS) -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"
+	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes $(CXXFLAGS) -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(mitigateAsync) -fPIC -o "$(current_dir)libvship$(dllend)"
 
 buildVulkan: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
@@ -217,4 +217,4 @@ buildVulkan: src/VshipLib.cpp .FORCE
 
 debugVulkan: shaderEmbedder src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
-	clang++ src/VshipLib.cpp -DVULKANBUILD -g $(CXXFLAGS) -std=c++17 -O2 -Wall -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field -I "$(current_dir)include" $(vulkanLink) $(fpic) -shared -o "$(current_dir)libvship$(dllend)"
+	clang++ src/VshipLib.cpp -DVULKANBUILD -g $(CXXFLAGS) -std=c++17 -O2 -Wall -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field -I "$(current_dir)include" $(vulkanLink) -fPIC -shared -o "$(current_dir)libvship$(dllend)"
