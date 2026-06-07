@@ -100,7 +100,7 @@ else
 	FFVSHIP_CXXFLAGS += $(shell pkg-config --cflags-only-I ffms2 libavutil)
 
 	#finding libcudart
-	CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
+	#CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
 endif
 
 ifeq ($(OS),Windows_NT)
