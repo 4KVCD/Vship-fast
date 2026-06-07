@@ -103,6 +103,16 @@ else
 	CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
 endif
 
+ifeq ($(OS),Windows_NT)
+	OLDVulkanLink = -I "${VULKAN_SDK}\Include" -L "${VULKAN_SDK}\Lib" -lvulkan-1
+else
+	ifeq ($(VULKAN_SDK), )
+		OLDVulkanLink = -lvulkan
+	else
+		OLDVulkanLink = -I "${VULKAN_SDK}/include" -L "${VULKAN_SDK}/lib" -lvulkan
+	endif
+endif
+
 define PKG_CONFIG
 prefix=$(DESTDIR)$(PREFIX)
 exec_prefix=${prefix}
@@ -199,9 +209,11 @@ buildall: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
 	hipcc src/VshipLib.cpp -g -std=c++17 -Wall -Wno-ignored-attributes $(CXXFLAGS) -I "$(current_dir)include" $(fatbincompressamd) --offload-arch=$(HIPARCH) -shared $(mitigateAsync) $(fpic) -o "$(current_dir)libvship$(dllend)"
 
-buildVulkan: shaderEmbedder src/VshipLib.cpp .FORCE
+buildVulkan: src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
-	clang++ src/VshipLib.cpp -DVULKANBUILD -DNDEBUG $(CXXFLAGS) -std=c++17 -O2 -Wall -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field -I "$(current_dir)include" $(vulkanLink) $(fpic) -shared -o "$(current_dir)libvship$(dllend)"
+	clang++ src/Vulkan/spvFileToCppHeader.cpp -std=c++17 -O2 -o shaderEmbedder
+	./shaderEmbedder libvshipSpvShaders include/libvshipSpvShaders.hpp
+	clang++ src/VshipLib.cpp -DVULKANBUILD -DNDEBUG $(CXXFLAGS) -std=c++17 -O2 -Wall -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field -I "$(current_dir)include" $(OLDVulkanLink) -fPIC -shared -o "$(current_dir)libvship$(dllend)"
 
 debugVulkan: shaderEmbedder src/VshipLib.cpp .FORCE
 	echo DEPRECATED BUILDING SYSTEM USED
