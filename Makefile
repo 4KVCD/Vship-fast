@@ -127,8 +127,10 @@ ifeq ($(BACKEND),Vulkan)
 	./shaderEmbedder libvshipSpvShaders include/libvshipSpvShaders.hpp
 endif
 
+genpkgConfig: .FORCE
+	$(file > libvship.pc,$(PKG_CONFIG))
+
 build: shaderEmbedder src/VshipLib.cpp .FORCE
-	#$(file > libvship.pc,$(PKG_CONFIG))
 	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(LDFLAGS) $(VSHIP_CXXFLAGS) $(VSHIP_LDFLAGS) -o "$(current_dir)libvship$(dllend)"
 
 shaderBuild: .FORCE
