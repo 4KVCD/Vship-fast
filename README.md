@@ -72,16 +72,16 @@ Additionally, to build the FFvship cli tool:
 
 ```bash
 #libvship Build
-make buildcuda     # Build for the current systems Nvidia gpu
-make buildcudaall  # Build for all supported Nvidia gpus
-make build         # Build for the current systems AMD gpu
-make buildall      # Build for all supported AMD gpus
+make build BACKEND=Cuda              # Build for the current systems Nvidia gpu
+make build BACKEND=Cuda ARCH=ALL     # Build for all supported Nvidia gpus
+make build BACKEND=HIP               # Build for the current systems AMD gpu
+make buildall BACKEND=HIP ARCH=ALL   # Build for all supported AMD gpus
 
 make build MITIGATE_MALLOC_ASYNC=on #build for AMD gpu and add a workaround to current amd driver issues if you have them (will be slower than a normal build)
 
 make shaderBuild   # Force shader rebuild, requires slangc (optional)
-make buildVulkan   # Build release vulkan vship
-make debugVulkan   # Build Vulkan Vship with debugging symbols and validation layers
+make build BACKEND=Vulkan   # Build release vulkan vship
+make build BACKEND=Vulkan DEBUG=1   # Build Vulkan Vship with debugging symbols and validation layers
 
 #FFVship CLI linux tool build (requires libvship built before FFVSHIP)
 make buildFFVSHIP
