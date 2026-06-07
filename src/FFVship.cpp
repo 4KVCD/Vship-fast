@@ -33,6 +33,16 @@ extern "C" {
 #include <libavutil/pixfmt.h>
 }
 
+#ifndef VSHIP_VERSION_MAJOR
+#define VSHIP_VERSION_MAJOR 0
+#endif
+#ifndef VSHIP_VERSION_MINOR
+#define VSHIP_VERSION_MINOR 0
+#endif
+#ifndef VSHIP_VERSION_MINOR
+#define VSHIP_VERSION_MINOR 0
+#endif
+
 using score_tuple_t = std::tuple<double, double, double>;
 using score_queue_t = ClosableThreadSet<std::tuple<int, score_tuple_t>>;
 using frame_tuple_t = std::tuple<int, uint8_t *, uint8_t *>;

@@ -2,6 +2,16 @@
 #include "VapourSynth4.h"
 #include "VSHelper4.h"
 
+#ifndef VSHIP_VERSION_MAJOR
+#define VSHIP_VERSION_MAJOR 0
+#endif
+#ifndef VSHIP_VERSION_MINOR
+#define VSHIP_VERSION_MINOR 0
+#endif
+#ifndef VSHIP_VERSION_MINOR
+#define VSHIP_VERSION_MINOR 0
+#endif
+
 #ifdef VULKANBUILD
     #include "Vulkan/butter/vapoursynth.hpp"
     #include "Vulkan/ssimu2/vapoursynth.hpp"
