@@ -90,11 +90,14 @@ make buildFFVSHIP
 2. Install libvship and eventually the FFVship executable.
 
 The `install` target automatically detects and installs only the components that were built.
+If libvship is built, it will also create a pkgconfig file and install it directly.
 ```bash
 make install
 #for arch/fedora, you need to use another prefix:
 make install PREFIX=/usr
 ```
+
+If pkgconfig is installed, you should be able to do: `pkg-config --modversion libvship` to get vship version.
 
 ## Library Usage
 

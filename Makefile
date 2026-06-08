@@ -115,15 +115,15 @@ endif
 
 define PKG_CONFIG
 prefix=$(DESTDIR)$(PREFIX)
-exec_prefix=${prefix}
-includedir=${prefix}/include
-libdir=${exec_prefix}/lib
+exec_prefix=$${prefix}
+includedir=$${prefix}/include
+libdir=$${exec_prefix}/lib
 
 Name: libvship
 Description: GPU Accelerated video quality metric library
 Version: $(VSHIP_VERSION_MAJOR).$(VSHIP_VERSION_MINOR).$(VSHIP_VERSION_MINORMINOR)
-Cflags: -I $(header_install_path)
-Libs: -L $(lib_install_path) -lvship"
+Cflags: -I$${includedir}
+Libs: -L$${libdir} -lvship
 endef
 
 .FORCE:
@@ -177,7 +177,7 @@ ifeq ($(OS),Windows_NT)
 install:
 	if exist "$(current_dir)libvship$(dllend)" copy "$(current_dir)libvship$(dllend)" "$(plugin_install_path)"
 else
-install:
+install: genpkgConfig
 	@if [ -f "$(current_dir)libvship$(dllend)" ]; then \
 		install -d "$(plugin_install_path)"; \
 		install -d "$(header_install_path)"; \
@@ -186,6 +186,7 @@ install:
 		ln -sf "../libvship$(dllend)" "$(plugin_install_path)/libvship$(dllend)"; \
 		install -m755 "$(current_dir)src/VshipAPI.h" "$(header_install_path)/VshipAPI.h"; \
 		install -m755 "$(current_dir)src/VshipColor.h" "$(header_install_path)/VshipColor.h"; \
+		install -m755 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc"; \
 	fi
 	@if [ -f "FFVship" ]; then \
 		install -d "$(exe_install_path)"; \
