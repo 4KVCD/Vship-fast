@@ -75,7 +75,7 @@ Additionally, to build the FFvship cli tool:
 make build BACKEND=Cuda              # Build for the current systems Nvidia gpu
 make build BACKEND=Cuda ARCH=ALL     # Build for all supported Nvidia gpus
 make build BACKEND=HIP               # Build for the current systems AMD gpu
-make buildall BACKEND=HIP ARCH=ALL   # Build for all supported AMD gpus
+make build BACKEND=HIP ARCH=ALL   # Build for all supported AMD gpus
 
 make build MITIGATE_MALLOC_ASYNC=on #build for AMD gpu and add a workaround to current amd driver issues if you have them (will be slower than a normal build)
 
