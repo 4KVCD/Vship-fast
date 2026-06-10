@@ -118,7 +118,6 @@ int main(int argc, char* argv[]){
 
     std::string metric_name = "ssimu2";
     parser.add_flag({"--metric", "-m"}, &metric_name, "Which metric to use [SSIMULACRA2, Butteraugli, CVVDP]");
-    MetricType metric = parse_metric_name(metric_name);
 
     int width = 1920;
     int height = 1080;
@@ -136,6 +135,8 @@ int main(int argc, char* argv[]){
     if (parser.parse_cli_args(args) != 0) { //the parser will have already printed an error
         return 1;
     }
+
+    MetricType metric = parse_metric_name(metric_name);
 
     Vship_Version vshipVer = Vship_GetVersion();
     std::cout << "Running Vship Version " << vshipVer.major << "." << vshipVer.minor << "." << vshipVer.minorMinor << " Under Backend ";
