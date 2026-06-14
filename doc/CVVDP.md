@@ -57,7 +57,7 @@ This also affects distortion map and may help using it as a mask to avoid tempor
 
 ### model_name
 
-Argument used for CVVDP, it allows to specify a display defined in the [CVVDP configuration](../src/cvvdp/display_models.hpp).
+Argument used for CVVDP, it allows to specify a display defined in the [CVVDP configuration](../src/HIP/cvvdp/display_models.hpp).
 
 The list of possible model is here:
 - standard_4k
