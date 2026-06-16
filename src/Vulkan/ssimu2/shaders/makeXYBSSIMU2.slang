@@ -1,3 +1,5 @@
+module makeXYBSSIMU2;
+
 float3 opsin_absorbance(float3 a){
     float3 out;
     const float opsin_bias = 0.0037930734f;
@@ -44,7 +46,7 @@ float3 make_positive_xyb(float3 a) {
     return a;
 }
 
-float3 rgb_to_positive_xyb_d(float3 a){
+public float3 rgb_to_positive_xyb_d(float3 a){
     a = linear_rgb_to_xyb(a);
     a = make_positive_xyb(a);
     return a;
