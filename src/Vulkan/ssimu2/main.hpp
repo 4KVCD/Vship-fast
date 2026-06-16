@@ -28,6 +28,22 @@ void placeDebugTransfer(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {{in, size, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}});
 }
 
+//scale goes from 1 to 5 included (size of the small scale)
+downsampleKernelInformation getScaleDownsampleInfo(int scale){
+    downsampleKernelInformation info;
+    info.result_XYB = (scale == 5); //last scale only
+
+    SkipMap skipMaps[3];
+    for (int i = 0; i < 3; i++){
+        skipMaps[i] = getSkipMap(i, scale-1);
+    }
+    info.skipX = skipMaps[0].ssim && skipMaps[0].artifact && skipMaps[0].detailloss;
+    info.skipY = skipMaps[1].ssim && skipMaps[1].artifact && skipMaps[1].detailloss;
+    info.skipB = skipMaps[2].ssim && skipMaps[2].artifact && skipMaps[2].detailloss;
+
+    return info;
+}
+
 //expects planar linear RGB input. Beware that each src1_d, src2_d and temp_d must be of size "totalscalesize" even if the actual image is contained in a width*height format
 //output of size 108 float
 void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* output, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress temp_d, int64_t width, int64_t height, GaussianHandle& gaussianhandle){
@@ -38,9 +54,7 @@ void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
     int64_t nh = height;
     int64_t index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src1_d[0]+sizeof(float)*index, src1_d[0]+sizeof(float)*(index+nw*nh), nw, nh);
-        placeDownsample(deviceHelper, cmdBuff, src1_d[1]+sizeof(float)*index, src1_d[1]+sizeof(float)*(index+nw*nh), nw, nh);
-        placeDownsample(deviceHelper, cmdBuff, src1_d[2]+sizeof(float)*index, src1_d[2]+sizeof(float)*(index+nw*nh), nw, nh);
+        placeDownsample(deviceHelper, cmdBuff, src1_d[0]+sizeof(float)*index, src1_d[1]+sizeof(float)*index, src1_d[2]+sizeof(float)*index, src1_d[0]+sizeof(float)*(index+nw*nh), src1_d[1]+sizeof(float)*(index+nw*nh), src1_d[2]+sizeof(float)*(index+nw*nh), nw, nh, getScaleDownsampleInfo(scale));
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
@@ -49,17 +63,15 @@ void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
     nh = height;
     index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src2_d[0]+sizeof(float)*index, src2_d[0]+sizeof(float)*(index+nw*nh), nw, nh);
-        placeDownsample(deviceHelper, cmdBuff, src2_d[1]+sizeof(float)*index, src2_d[1]+sizeof(float)*(index+nw*nh), nw, nh);
-        placeDownsample(deviceHelper, cmdBuff, src2_d[2]+sizeof(float)*index, src2_d[2]+sizeof(float)*(index+nw*nh), nw, nh);
+        placeDownsample(deviceHelper, cmdBuff, src2_d[0]+sizeof(float)*index, src2_d[1]+sizeof(float)*index, src2_d[2]+sizeof(float)*index, src2_d[0]+sizeof(float)*(index+nw*nh), src2_d[1]+sizeof(float)*(index+nw*nh) , src2_d[2]+sizeof(float)*(index+nw*nh), nw, nh, getScaleDownsampleInfo(scale));
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
     }
 
     //step 2 : positive XYB transition
-    placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src1_d, totalscalesize);
-    placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src2_d, totalscalesize);
+    //placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src1_d, totalscalesize);
+    //placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src2_d, totalscalesize);
 
     //step 4 : ssim map
     

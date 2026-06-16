@@ -21,6 +21,22 @@ int64_t getTotalScaleSize(int64_t width, int64_t height){
     return result;
 }
 
+//scale goes from 1 to 5 included (size of the small scale)
+downsampleKernelInformation getScaleDownsampleInfo(int scale){
+    downsampleKernelInformation info;
+    info.result_XYB = (scale == 5); //last scale only
+
+    SkipMap skipMaps[3];
+    for (int i = 0; i < 3; i++){
+        skipMaps[i] = getSkipMap(i, scale-1);
+    }
+    info.skipX = skipMaps[0].ssim && skipMaps[0].artifact && skipMaps[0].detailloss;
+    info.skipY = skipMaps[1].ssim && skipMaps[1].artifact && skipMaps[1].detailloss;
+    info.skipB = skipMaps[2].ssim && skipMaps[2].artifact && skipMaps[2].detailloss;
+
+    return info;
+}
+
 //expects planar linear RGB input. Beware that each src1_d, src2_d and temp_d must be of size "totalscalesize" even if the actual image is contained in a width*height format
 double ssimu2GPUProcess(float* src1_d[3], float* src2_d[3], float* temp_d, int64_t width, int64_t height, GaussianHandle& gaussianhandle, hipStream_t streams[2], hipEvent_t events[4]){
     const int64_t totalscalesize = getTotalScaleSize(width, height);
@@ -30,9 +46,7 @@ double ssimu2GPUProcess(float* src1_d[3], float* src2_d[3], float* temp_d, int64
     int64_t nh = height;
     int64_t index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        downsample(src1_d[0]+index, src1_d[0]+index+nw*nh, nw, nh, streams[0]);
-        downsample(src1_d[1]+index, src1_d[1]+index+nw*nh, nw, nh, streams[0]);
-        downsample(src1_d[2]+index, src1_d[2]+index+nw*nh, nw, nh, streams[0]);
+        downsample(src1_d[0]+index, src1_d[1]+index, src1_d[2]+index, src1_d[0]+index+nw*nh, src1_d[1]+index+nw*nh, src1_d[2]+index+nw*nh, nw, nh, getScaleDownsampleInfo(scale), streams[0]);
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
@@ -41,17 +55,13 @@ double ssimu2GPUProcess(float* src1_d[3], float* src2_d[3], float* temp_d, int64
     nh = height;
     index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        downsample(src2_d[0]+index, src2_d[0]+index+nw*nh, nw, nh, streams[1]);
-        downsample(src2_d[1]+index, src2_d[1]+index+nw*nh, nw, nh, streams[1]);
-        downsample(src2_d[2]+index, src2_d[2]+index+nw*nh, nw, nh, streams[1]);
+        downsample(src2_d[0]+index, src2_d[1]+index, src2_d[2]+index, src2_d[0]+index+nw*nh, src2_d[1]+index+nw*nh, src2_d[2]+index+nw*nh, nw, nh, getScaleDownsampleInfo(scale), streams[1]);
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
     }
 
     //step 2 : positive XYB transition
-    rgb_to_positive_xyb(src1_d, totalscalesize, streams[0]);
-    rgb_to_positive_xyb(src2_d, totalscalesize, streams[1]);
 
     //step 4 : ssim map
     
