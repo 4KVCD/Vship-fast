@@ -11,7 +11,7 @@ ARCH ?= native
 #can be native or all
 DEBUG ?= 0
 
-HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx906,gfx801,gfx802,gfx803
+HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx1034,gfx906,gfx801,gfx802,gfx803
 
 VSHIP_VERSION_MAJOR=5
 VSHIP_VERSION_MINOR=1
