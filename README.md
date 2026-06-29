@@ -228,9 +228,9 @@ Testing Clip: 1080p 1339 frames
 SSIMU2 Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 115s
-VSZIP | CPU | 58.120s
-fssimu2 | CPU | 60.222s
 ssimulacra2_rs | CPU | X s
+fssimu2 | CPU | 60.222s
+VSZIP | CPU | 29.978s
 --- **CUDA** --- | --- | ---
 Vapoursynth Vship | GPU | 10.351s
 FFVship | GPU | 7.146s
