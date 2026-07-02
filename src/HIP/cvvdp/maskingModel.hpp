@@ -74,7 +74,7 @@ __global__ void computeD_Kernel(float* out0, float* out1, float* out2, float* ou
         //if (id == 0) printf("Cmask: %f %f %f %f from %f %f %f %f\n", Cmask0, Cmask1, Cmask2, Cmask3, blurred_Cm0, blurred_Cm1, blurred_Cm2, blurred_Cm3);
         const int region_x = i%gaussianTileX;
         const int region_y = i/gaussianTileX;
-        if (x+gaussianThx*region_x >= width || y+gaussianThy*region_y >= height) return;
+        if (x+gaussianThx*region_x >= width || y+gaussianThy*region_y >= height) continue;
         const int64_t id = (y+gaussianThy*region_y)*width + x+gaussianThx*region_x;
         const float Du0 = powf(abs(R0[id] - T0[id]), mask_p)/(1+Cmask0);
         const float Du1 = powf(abs(R1[id] - T1[id]), mask_p)/(1+Cmask1);
