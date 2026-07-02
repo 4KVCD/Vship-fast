@@ -498,6 +498,7 @@ class BasicConverterProcessor {
             case AV_PIX_FMT_RGBA:
             case AV_PIX_FMT_ABGR:
             case AV_PIX_FMT_BGRA:
+            case AV_PIX_FMT_GBRP:
             unpack_stride[0] = width;
             unpack_stride[1] = unpack_stride[0];
             unpack_stride[2] = unpack_stride[0]; //same for both chroma
@@ -704,6 +705,15 @@ class BasicConverterProcessor {
                         unpack_buffer[0][j*unpack_stride[0]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+2];
                         unpack_buffer[1][j*unpack_stride[1]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+1];
                         unpack_buffer[2][j*unpack_stride[2]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[0]+4*i+0];
+                    }
+                }
+            break;
+            case AV_PIX_FMT_GBRP:
+                for (int j = 0; j < height; j++){
+                    for (int i = 0; i < width; i++){
+                        unpack_buffer[0][j*unpack_stride[0]+i] = ((uint8_t*)(src->Data[2]))[j*src->Linesize[0]+i];
+                        unpack_buffer[1][j*unpack_stride[1]+i] = ((uint8_t*)(src->Data[0]))[j*src->Linesize[1]+i];
+                        unpack_buffer[2][j*unpack_stride[2]+i] = ((uint8_t*)(src->Data[1]))[j*src->Linesize[2]+i];
                     }
                 }
             break;

@@ -191,6 +191,7 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
         case AV_PIX_FMT_ARGB:
         case AV_PIX_FMT_ABGR:
         case AV_PIX_FMT_BGRA:
+        case AV_PIX_FMT_GBRP:
             out.colorFamily = Vship_ColorRGB;
             out.YUVMatrix = Vship_MATRIX_RGB;
             out.transferFunction = Vship_TRC_sRGB;
