@@ -28,15 +28,14 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
 
     //if minwidth < resize_width it means we need to resize still, this requires more memory
 
-    int allocatedPlanes = 5;
-    int stream1_supPlane = 4;
+    int allocatedPlanes = 9;
     int64_t resizeBufferSize = 0;
     if (minwidth < resize_width) resizeBufferSize = resize_width*minheight*sizeof(float);
 
     const int64_t pyramidSize = LpyrMemoryNeedPerPlane(width, height, model->get_screen_ppd());
     //std::cout << "allocation bytes : " << sizeof(float)*(allocatedPlanes+stream1_supPlane)*pyramidSize << std::endl;
     float* mem_d;
-    hipError_t erralloc = hipMallocAsync(&mem_d, sizeof(float)*(allocatedPlanes+stream1_supPlane)*pyramidSize+resizeBufferSize, stream1);
+    hipError_t erralloc = hipMallocAsync(&mem_d, sizeof(float)*(allocatedPlanes)*pyramidSize+resizeBufferSize, stream1);
     if (erralloc != hipSuccess){
         throw VshipError(OutOfVRAM, __FILE__, __LINE__);
     }
@@ -47,6 +46,9 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
         throw VshipError(OutOfVRAM, __FILE__, __LINE__);
     }
 
+    //memory process is that we first put inputs on [mem_d, mem_d+4*pyramidSize[
+    //then we have a big merged kernel that fills in [mem_d+4*pyramidSize, mem_d+5*pyramidSize[ (Lbkg), that fills next scale in the input buffer and fills the output in [mem_d+5*pyramidSize, mem_d+9*pyramidSize[
+    //then we have another big kernel with all the gaussian blurs and up to final map that reads from [mem_d+4*pyramidSize, mem_d+9*pyramidSize[ and outputs to [mem_d, mem_d+4*pyramidSize[
     float* Y_sustained1 = mem_d;
     float* RG_sustained1 = mem_d + pyramidSize;
     float* YV_sustained1 = mem_d + 2*pyramidSize;
@@ -60,7 +62,8 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     float* tempResize2 = mem_d2 + 4*pyramidSize;
 
     const int levels = get_frequencies(width, height, model->get_screen_ppd()).size();
-    float* res[4] = {mem_d + 5*pyramidSize, mem_d + 6*pyramidSize, mem_d + 7*pyramidSize, mem_d + 8*pyramidSize};
+    //res represents the placment of the final map, which is on the input after all the buffer swapping for read/write
+    float* res[4] = {Y_sustained1, RG_sustained1, YV_sustained1, Y_transient1};
     int64_t w = width;
     int64_t h = height;
     std::vector<int64_t> bandOffsets(levels);
@@ -89,8 +92,9 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     }
 
     const float ppd = model->get_screen_ppd();
-    LpyrManager LPyr1(mem_d, width, height, ppd, pyramidSize, stream1);
-    LpyrManager LPyr2(mem_d2, width, height, ppd, pyramidSize, stream2);
+    LpyrManager LPyr1(mem_d, width, height, ppd, pyramidSize, csfhandle, stream1);
+    LpyrManager LPyr2(mem_d2, width, height, ppd, pyramidSize, csfhandle, stream2);
+
 
     //stream1 waits for stream2 to be done
     GPU_CHECK(hipEventRecord(event, stream2));
@@ -149,12 +153,19 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     for (int band = 0; band < levels; band++){
         for (int channel = 0; channel < 4; channel++){
             const float val = scores[band*4+channel];
+            //std::cout << "val: " << val << " at channel " << channel << " band " << band << std::endl;
             finalValue += std::pow(val, 4);
         }
     }
     finalValue = std::pow(finalValue, 1./4.);
 
     return finalValue;
+
+    //GPU_CHECK(hipFreeAsync(mem_d, stream1));
+    //GPU_CHECK(hipFreeAsync(mem_d2, stream2));
+    //GPU_CHECK(hipStreamSynchronize(stream1));
+    //GPU_CHECK(hipStreamSynchronize(stream2));
+    //return 0.f;
 }
 
 //currently at 32 planes + 3*fps/2 planes consumed

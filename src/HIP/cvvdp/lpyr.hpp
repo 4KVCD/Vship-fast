@@ -1,9 +1,135 @@
 #pragma once
 
+#include "csf.hpp"
+
 namespace cvvdp{
 
 __device__ constexpr float kernel_a = 0.4f;
 __device__ constexpr float gaussPyrKernel[5] = {0.25-kernel_a/2.,0.25, kernel_a, 0.25, 0.25-kernel_a/2.};
+
+//use block of size 16/16
+//pyramidSize is the stride of a "big" plane as a whole. mem_d needs to be offset prior using scaleOffset
+//memo: mem_d+scaleOffset+pyramidSize*n = mem_d+pyramidSize*n + scaleOffset (-> we only need mem_d+scaleOffset and not mem_d)
+//this kernel is called for all planes and then all scales successively except the smallest one
+__global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler csfhandle){
+    const int64_t base_x = blockIdx.x * 16;
+    const int64_t base_y = blockIdx.y * 16;
+    const int thx = threadIdx.x;
+    const int thy = threadIdx.y;
+    const int thid = thy*16+thx;
+
+    const int64_t small_width = (width+1)/2;
+    const int64_t small_height = (height+1)/2;
+
+    //memory layout helpers
+    float* inputPlane = mem_d+channel*pyramidSize; //read from
+    float* Lbkg = mem_d+4*pyramidSize; //gets written by channel 0, read by others
+    float* smallScale = inputPlane+width*height; //gets written to
+    float* outputPlane = mem_d+(channel+5)*pyramidSize; //gets written to
+    __shared__ float sharedmem[23*23 + 10*10];
+    float* bufferInput = sharedmem; // 24*24 (16*16 padded by 4 all side)
+    float* bufferSmallScale = sharedmem+23*23; //10*10 (8*8 padded by 1 all side)
+
+    //load input in memory
+    #pragma unroll
+    for (int i = thid; i < 23*23; i+=256){
+        int64_t x = base_x-4 + (i%23);
+        int64_t y = base_y-4 + (i/23);
+
+        if (x < 0) x = -x-1;
+        if (x >= width) x = 2*width - x - 2;
+
+        if (y < 0) y = -y-1;
+        if (y >= height) y = 2*height - y - 2;
+
+        bufferInput[i] = inputPlane[y*width+x];
+    }
+    __syncthreads();
+
+    //compute into bufferSmallScale
+    if (thx < 10 && thy < 10){
+        bufferSmallScale[thy*10+thx] = 0.f;
+        #pragma unroll
+        for (int ix = 0; ix < 5; ix++){
+            const float kernelx = gaussPyrKernel[ix];
+            #pragma unroll
+            for (int iy = 0; iy < 5; iy++){
+                const float kernel = kernelx*gaussPyrKernel[iy];
+                //for thx = 9, base column is 18
+                bufferSmallScale[thy*10+thx] += kernel*bufferInput[(2*thy+iy)*23+2*thx+ix];
+            }
+        }
+    }
+    __syncthreads();
+    //export [1x1, 8x8] smallscale into plane
+    if (thx < 8 && thy < 8){
+        const int64_t new_x = (blockIdx.x*8 + thx);
+        const int64_t new_y = (blockIdx.y*8 + thy);
+        //if (new_x == 4 && new_y == 7) printf("got %f in channel %d band %d\n", bufferSmallScale[(thy+1)*10+thx+1], channel, scale);
+        if (new_x < small_width && new_y < small_height) smallScale[new_y*small_width+new_x] = bufferSmallScale[(thy+1)*10+thx+1];
+    }
+    //no need to syncthreads because bufferSmallScale won't be written to again
+
+    //use [0x0, 9x9] smallscale to expand and get local value for global x global y
+    const int64_t glx = base_x + thx;
+    const int64_t gly = base_y + thy;
+    float expanded = 0.f;
+
+    const int parity_x = thx%2;
+    const int parity_y = thy%2;
+
+    //either in [0,3] or [0, 2]
+    for (int dx = 0; dx < 3-parity_x; dx++){
+        const float kernelx = 2*gaussPyrKernel[2*dx+parity_x];
+        for (int dy = 0; dy < 3-parity_y; dy++){
+            const float kernel = kernelx*2*gaussPyrKernel[2*dy+parity_y];
+            expanded += kernel*bufferSmallScale[((thy+1)/2 + dy) * 10 + ((thx+1)/2 + dx)];
+        }
+    }
+
+    //clamp + export this value as Lbkg if channel = 0 or read otherwise
+    float lbkg = 0.f;
+    if (channel == 0){
+        expanded = max(expanded, 0.01f);
+        lbkg = expanded;
+        if (glx < width && gly < height) Lbkg[gly*width+glx] = lbkg;
+    } else {
+        int64_t ref_ind_x = glx;
+        int64_t ref_ind_y = gly;
+
+        if (ref_ind_x < 0) ref_ind_x = -ref_ind_x-1;
+        if (ref_ind_x >= width) ref_ind_x = 2*width - ref_ind_x - 2;
+
+        if (ref_ind_y < 0) ref_ind_y = -ref_ind_y-1;
+        if (ref_ind_y >= height) ref_ind_y = 2*height - ref_ind_y - 2;
+
+        lbkg = Lbkg[ref_ind_y*width+ref_ind_x];
+    }
+
+    //substract + refine to get final contrast on this local value
+    const float Ldiff = (bufferInput[(thy+4)*23 + thx+4] - expanded);
+    float contrast = min(Ldiff/lbkg, 1000.f);
+
+    if (scale != 0) contrast *= 2;
+
+    //apply gaussian precompute (notably CSF)
+    //const float ch_gain = (channel == 1) ? 1.45f : 1.f;
+
+    //const float S = csfhandle.computeSensitivityGPU(lbkg, scale, channel);
+    //contrast *= S * ch_gain;
+
+    //if (glx == 6 && gly == 4) printf("contrast %f on channel %d and scale %d\n", contrast, channel, scale);
+    if (glx < width && gly < height) outputPlane[gly*width+glx] = contrast;
+}
+
+void fromPyrReduceToCSF(float* mem_d, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler& csfhandle, hipStream_t stream){
+    int th_x = 16;
+    int th_y = 16;
+    int64_t bl_x = (width+th_x-1)/th_x;
+    int64_t bl_y = (height+th_y-1)/th_y;
+    fromPyrReduceToCSF_Kernel<<<dim3(bl_x, bl_y), dim3(th_x, th_y), 0, stream>>>(mem_d, pyramidSize, width, height, scale, channel, csfhandle);
+    GPU_CHECK(hipGetLastError());
+}
 
 //separable, but not worth it for a kernel of size 5
 __global__ void gaussPyrReduce_Kernel(float* dst, float* src, int64_t source_width, int64_t source_height){
@@ -109,7 +235,7 @@ void gaussPyrExpand(float* dst, float* src, int64_t new_width, int64_t new_heigh
 }
 
 template<bool isMean, int multiplier>
-__global__ void baseBandPyrRefine_Kernel(float* p, float* Lbkg, int64_t width){
+__global__ void baseBandPyrRefine_Kernel(float* dst, float* p, float* Lbkg, int64_t width){
     const int64_t thid = threadIdx.x + blockIdx.x * blockDim.x;
     if (thid >= width) return;
 
@@ -124,32 +250,17 @@ __global__ void baseBandPyrRefine_Kernel(float* p, float* Lbkg, int64_t width){
         //then our adress is the mean, a single float at 0
         val = min(p[thid]/max(0.01f, Lbkg[0]), 1000.f);
     }
-    p[thid] = val*multiplier;
+    dst[thid] = val*multiplier;
     //if (thid == 0) printf("baseBandPyrRefine %f at width %lld\n", p[thid], width);
 }
 
 //gets the contrast from the layers
 template<bool isMean, int multiplier>
-void baseBandPyrRefine(float* p, float* Lbkg, int64_t width, hipStream_t stream){
+void baseBandPyrRefine(float* dst, float* p, float* Lbkg, int64_t width, hipStream_t stream){
     int th_x = 256;
     int64_t bl_x = (width + th_x-1)/th_x;
-    baseBandPyrRefine_Kernel<isMean, multiplier><<<dim3(bl_x), dim3(th_x), 0, stream>>>(p, Lbkg, width);   
+    baseBandPyrRefine_Kernel<isMean, multiplier><<<dim3(bl_x), dim3(th_x), 0, stream>>>(dst, p, Lbkg, width);
     GPU_CHECK(hipGetLastError());
-}
-
-std::vector<float> get_frequencies(const int64_t width, const int64_t height, const float ppd){
-    const float min_freq = 0.2;
-    const int maxLevel_forRes = std::log2(std::min(width, height))-1;
-    const int maxLevel_forPPD = std::ceil(-std::log2(2*min_freq/0.3228/ppd))+3;
-    const int maxLevel_hard = 14;
-    const int levels = std::min(maxLevel_forPPD, std::min(maxLevel_forRes, maxLevel_hard));
-
-    std::vector<float> band_frequencies(levels);
-    band_frequencies[0] = 0.5*ppd;
-    for (int i = 0; i < levels-1; i++){
-        band_frequencies[i+1] = 0.3228*0.5*ppd/((float)(1 << i));
-    }
-    return band_frequencies;
 }
 
 //in float
@@ -175,7 +286,9 @@ class LpyrManager{
 public: 
     //plane contains 5 planes each twice the size
     //the last plane will contain L_bkg while the first planes should contain the 4 temporal channels for the first half
-    LpyrManager(float* plane, const int64_t width, const int64_t height, const float ppd, int64_t bandOffset, const hipStream_t stream){
+    LpyrManager(float* plane, const int64_t width, const int64_t height, const float ppd, int64_t bandOffset, CSF_Handler& csfhandle, const hipStream_t stream){
+        //We have a big merged kernel that fills in [mem_d+4*pyramidSize, mem_d+5*pyramidSize[ (Lbkg), that fills next scale in the input buffer and fills the output in [mem_d+5*pyramidSize, mem_d+9*pyramidSize[
+        //we repeat that for each scale except the last of course
         band_frequencies = get_frequencies(width, height, ppd);
         const int levels = band_frequencies.size();
 
@@ -192,27 +305,8 @@ public:
             adresses[i] = p;
 
             if (i != levels-1){
-                //first is Y_sustained, it governs L_BKG
-                gaussPyrReduce(p+w*h, p, w, h, stream);
-                gaussPyrExpand<false, false, true>(p+4*planeOffset, p+w*h, w, h, stream);
-                subarray(p, p+4*planeOffset, p, w*h, stream);
-                if (i == 0){
-                    baseBandPyrRefine<false, 1>(p, p+4*planeOffset, w*h, stream);
-                } else {
-                    baseBandPyrRefine<false, 2>(p, p+4*planeOffset, w*h, stream);
-                }
-                //then other channels
-                for (int channel = 1; channel < 4; channel++){
-                    //we first create the next step of the pyramid
-                    gaussPyrReduce(p+w*h+channel*planeOffset, p+channel*planeOffset, w, h, stream);
-                    //then we substract its upscaled version from the original to create the "layer"
-                    gaussPyrExpand<true, false, false>(p+channel*planeOffset, p+w*h+channel*planeOffset, w, h, stream);
-                    //then we transform this layer into a contrast by using the L_BKG computed before the loop
-                    if (i == 0){
-                        baseBandPyrRefine<false, 1>(p+channel*planeOffset, p+4*planeOffset, w*h, stream);
-                    } else {
-                        baseBandPyrRefine<false, 2>(p+channel*planeOffset, p+4*planeOffset, w*h, stream);
-                    }
+                for (int channel = 0; channel < 4; channel++){
+                    fromPyrReduceToCSF(p, planeOffset, w, h, i, channel, csfhandle, stream);
                 }
             } else {
                 //here Lbkg is different, it is the mean.
@@ -220,7 +314,7 @@ public:
                 computeMean<1>(p, p+4*planeOffset, w*h, true, stream);
                 float* meanp = p+4*planeOffset;
                 for (int channel = 0; channel < 4; channel++){
-                    baseBandPyrRefine<true, 1>(p+channel*planeOffset, meanp, w*h, stream);
+                    baseBandPyrRefine<true, 1>(p+(channel+5)*planeOffset, p+(channel)*planeOffset, meanp, w*h, stream);
                 }
             }
 
@@ -242,7 +336,7 @@ public:
         return adresses[band]+4*planeOffset;
     }
     float* getContrast(int channel, int band){
-        return adresses[band]+channel*planeOffset;
+        return adresses[band]+(channel+5)*planeOffset;
     }
 };
 

@@ -16,6 +16,7 @@ __global__ void reduceSum(float* dst, float* src, int64_t size, bool divide){
     } else {
         if constexpr (applyPower) {
             pointerJumpingBuffer[local_thid] = powf(src[global_thid], power);
+            //if (power == 2 && applyPower && src[global_thid] != 0) printf("global id %lld had %f at width*height %lld\n", global_thid, src[global_thid], size);
             //if (!applyInversePower && global_thid == 13*1024 + 64 && power == 2 && size == 1184264) printf("%lld .. %f\n", size, src[global_thid]);
         } else {
             pointerJumpingBuffer[local_thid] = src[global_thid];
