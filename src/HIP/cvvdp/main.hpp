@@ -20,7 +20,7 @@
 
 namespace cvvdp{
 
-double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width, int64_t resize_height, TemporalRing& temporalRing1, TemporalRing& temporalRing2, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model, hipStream_t stream1, hipStream_t stream2, hipEvent_t event, hipEvent_t event2){
+double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width, int64_t resize_height, TemporalRing& temporalRing1, TemporalRing& temporalRing2, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model, hipStream_t stream1, hipStream_t stream2, std::vector<hipEvent_t> events){
     const int64_t minwidth = temporalRing1.width;
     const int64_t minheight = temporalRing1.height;
     const int64_t width = resize_width;
@@ -49,21 +49,9 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     //memory process is that we first put inputs on [mem_d, mem_d+4*pyramidSize[
     //then we have a big merged kernel that fills in [mem_d+4*pyramidSize, mem_d+5*pyramidSize[ (Lbkg), that fills next scale in the input buffer and fills the output in [mem_d+5*pyramidSize, mem_d+9*pyramidSize[
     //then we have another big kernel with all the gaussian blurs and up to final map that reads from [mem_d+4*pyramidSize, mem_d+9*pyramidSize[ and outputs to [mem_d, mem_d+4*pyramidSize[
-    float* Y_sustained1 = mem_d;
-    float* RG_sustained1 = mem_d + pyramidSize;
-    float* YV_sustained1 = mem_d + 2*pyramidSize;
-    float* Y_transient1 = mem_d + 3*pyramidSize;
-    float* tempResize1 = mem_d + 4*pyramidSize; //is only allocated if needed
 
-    float* Y_sustained2 = mem_d2;
-    float* RG_sustained2 = mem_d2 + pyramidSize;
-    float* YV_sustained2 = mem_d2 + 2*pyramidSize;
-    float* Y_transient2 = mem_d2 + 3*pyramidSize;
-    float* tempResize2 = mem_d2 + 4*pyramidSize;
-
-    const int levels = get_frequencies(width, height, model->get_screen_ppd()).size();
-    //res represents the placment of the final map, which is on the input after all the buffer swapping for read/write
-    float* res[4] = {Y_sustained1, RG_sustained1, YV_sustained1, Y_transient1};
+    const std::vector<float> band_frequencies = get_frequencies(width, height, model->get_screen_ppd());
+    const int levels = band_frequencies.size();
     int64_t w = width;
     int64_t h = height;
     std::vector<int64_t> bandOffsets(levels);
@@ -74,21 +62,34 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
         h = (h+1)/2;
     }
 
+    std::vector<std::vector<float*>> memPlace1;
+    std::vector<std::vector<float*>> memPlace2;
+    memPlace1.resize(9);
+    memPlace2.resize(9);
+    for (int channel = 0; channel < memPlace1.size(); channel++){
+        memPlace1[channel].resize(levels);
+        memPlace2[channel].resize(levels);
+        for (int band = 0; band < levels; band++){
+            memPlace1[channel][band] = mem_d+channel*pyramidSize+bandOffsets[band];
+            memPlace2[channel][band] = mem_d2+channel*pyramidSize+bandOffsets[band];
+        }
+    }
+
     //let's get the temporal channel out of the temporal ring!
-    computeTemporalChannels(temporalRing1, Y_sustained1, RG_sustained1, YV_sustained1, Y_transient1, stream1);
-    computeTemporalChannels(temporalRing2, Y_sustained2, RG_sustained2, YV_sustained2, Y_transient2, stream2);
+    computeTemporalChannels(temporalRing1, memPlace1[0][0], memPlace1[1][0], memPlace1[2][0], memPlace1[3][0], stream1);
+    computeTemporalChannels(temporalRing2, memPlace2[0][0], memPlace2[1][0], memPlace2[2][0], memPlace2[3][0], stream2);
 
     if (minwidth < resize_width){
         //this means that the planes contained in Y_sustained... are not the right size!
         //we need to resize now
-        resizePlane(Y_sustained1, tempResize1, Y_sustained1, minwidth, minheight, width, height, stream1);
-        resizePlane(RG_sustained1, tempResize1, RG_sustained1, minwidth, minheight, width, height, stream1);
-        resizePlane(YV_sustained1, tempResize1, YV_sustained1, minwidth, minheight, width, height, stream1);
-        resizePlane(Y_transient1, tempResize1, Y_transient1, minwidth, minheight, width, height, stream1);
-        resizePlane(Y_sustained2, tempResize2, Y_sustained2, minwidth, minheight, width, height, stream2);
-        resizePlane(RG_sustained2, tempResize2, RG_sustained2, minwidth, minheight, width, height, stream2);
-        resizePlane(YV_sustained2, tempResize2, YV_sustained2, minwidth, minheight, width, height, stream2);
-        resizePlane(Y_transient2, tempResize2, Y_transient2, minwidth, minheight, width, height, stream2);
+        resizePlane(memPlace1[0][0], memPlace1[4][0], memPlace1[0][0], minwidth, minheight, width, height, stream1);
+        resizePlane(memPlace1[1][0], memPlace1[4][0], memPlace1[1][0], minwidth, minheight, width, height, stream1);
+        resizePlane(memPlace1[2][0], memPlace1[4][0], memPlace1[2][0], minwidth, minheight, width, height, stream1);
+        resizePlane(memPlace1[3][0], memPlace1[4][0], memPlace1[3][0], minwidth, minheight, width, height, stream1);
+        resizePlane(memPlace2[0][0], memPlace2[4][0], memPlace2[0][0], minwidth, minheight, width, height, stream2);
+        resizePlane(memPlace2[1][0], memPlace2[4][0], memPlace2[1][0], minwidth, minheight, width, height, stream2);
+        resizePlane(memPlace2[2][0], memPlace2[4][0], memPlace2[2][0], minwidth, minheight, width, height, stream2);
+        resizePlane(memPlace2[3][0], memPlace2[4][0], memPlace2[3][0], minwidth, minheight, width, height, stream2);
     }
 
     const float ppd = model->get_screen_ppd();
@@ -97,8 +98,8 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
 
 
     //stream1 waits for stream2 to be done
-    GPU_CHECK(hipEventRecord(event, stream2));
-    GPU_CHECK(hipStreamWaitEvent(stream1, event));
+    GPU_CHECK(hipEventRecord(events[0], stream2));
+    GPU_CHECK(hipStreamWaitEvent(stream1, events[0]));
     //now we only use stream1, this is the time for merging both sources
     
     w = width;
@@ -106,40 +107,44 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
             for (int channel = 0; channel < 4; channel++){
-                preGaussianPreCompute(LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle, stream1);
+                preGaussianPreCompute(memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
             }
             //it writes on its source
-            computeD(res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle, stream1);
+            computeD(memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle, stream1);
         } else {
             //baseband
             for (int channel = 0; channel < 4; channel++){
-                computeD_baseband(res[channel]+bandOffsets[band], LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle, stream1);
+                computeD_baseband(memPlace1[channel][band], memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
             }
         }
         w = (w+1)/2;
         h = (h+1)/2;
     }
     //stream2 waits for stream1 to be done before freeing memory (memory of Lpyr2)
-    GPU_CHECK(hipEventRecord(event2, stream1));
-    GPU_CHECK(hipStreamWaitEvent(stream2, event2));
+    GPU_CHECK(hipEventRecord(events[1], stream1));
+    GPU_CHECK(hipStreamWaitEvent(stream2, events[1]));
     GPU_CHECK(hipFreeAsync(mem_d2, stream2));
     //the complete full distortion map is stored in Lpyr1
     //and we can use Lpyr1 Lbkg place as temporary storage for pooling
     std::vector<float> scores(levels*4); //per_band and per channel
     int tempOffset = 0;
-    float* temp = LPyr1.getLbkg(0); //we take all the space! so we use band0
+    float* temp = memPlace1[4][0];
+    w = width;
+    h = height;
     for (int band = 0; band < levels; band++){
         for (int channel = 0; channel < 4; channel++){
-            const auto [w, h] = LPyr1.getResolution(band);
             const int64_t size = w*h;
-            computeMean<2>(res[channel]+bandOffsets[band], temp+tempOffset, size, true, stream1);
+            computeMean<2>(memPlace1[channel][band], temp+tempOffset, size, true, stream1);
             tempOffset++; //we stored the norm at temp[tempOffset]
         }
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
     GPU_CHECK(hipMemcpyDtoHAsync(scores.data(), temp, sizeof(float)*levels*4, stream1));
 
     if (dstp != NULL){
         //we want a distmap
+        float* res[4] = {memPlace1[0][0], memPlace1[1][0], memPlace1[2][0], memPlace1[3][0]};
         getDistMap(res, bandOffsets, width, height, levels, stream1);
         strideAdder(res[0], res[1], dststride, width, height, stream1);
         GPU_CHECK(hipMemcpyDtoHAsync((void*)(dstp), res[1], dststride * height, stream1));
@@ -187,8 +192,7 @@ class CVVDPComputingImplementation{
     int64_t source_height = 0;
     hipStream_t stream1 = 0;
     hipStream_t stream2 = 0;
-    hipEvent_t event;
-    hipEvent_t event2;
+    std::vector<hipEvent_t> events;
     int gpu_id;
 public:
     int64_t resize_width = 0;
@@ -197,10 +201,6 @@ public:
         this->gpu_id = gpu_id;
         GPU_CHECK(hipSetDevice(gpu_id));
         model = new DisplayModel(model_key, model_config_json);
-        GPU_CHECK(hipStreamCreate(&stream1));
-        GPU_CHECK(hipStreamCreate(&stream2));
-        GPU_CHECK(hipEventCreate(&event));
-        GPU_CHECK(hipEventCreate(&event2));
 
         converter1.init(source_colorspace, VshipColorConvert::linRGB, stream1);
         converter2.init(source_colorspace2, VshipColorConvert::linRGB, stream2);
@@ -234,6 +234,15 @@ public:
         ref_colorspace = source_colorspace;
         dis_colorspace = source_colorspace2;
 
+        const uint levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
+
+        events.resize(levels+1);
+        for (uint i = 0; i < events.size(); i++){
+            GPU_CHECK(hipEventCreate(events.data()+i));
+        }
+        GPU_CHECK(hipStreamCreate(&stream1));
+        GPU_CHECK(hipStreamCreate(&stream2));
+
         //temporalRing are big VRAM consumers, we ll make themm store the smallest version of the video
         temporalRing1.init(fps, std::min(resize_width, source_width), std::min(resize_height, source_height));
         temporalRing2.init(fps, std::min(resize_width, source_width), std::min(resize_height, source_height));
@@ -253,8 +262,9 @@ public:
         delete model;
         GPU_CHECK(hipStreamDestroy(stream1));
         GPU_CHECK(hipStreamDestroy(stream2));
-        GPU_CHECK(hipEventDestroy(event));
-        GPU_CHECK(hipEventDestroy(event2));
+        for (uint i = 0; i < events.size(); i++){
+            GPU_CHECK(hipEventDestroy(events[i]));
+        }
     }
     void loadImageToRing(const uint8_t *srcp1[3], const uint8_t *srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         GPU_CHECK(hipSetDevice(gpu_id));
@@ -368,7 +378,7 @@ public:
     }
     double run(const uint8_t *dstp, int64_t dststride, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         loadImageToRing(srcp1, srcp2, lineSize, lineSize2);
-        const double current_score = CVVDPprocess(dstp, dststride, resize_width, resize_height, temporalRing1, temporalRing2, csf_handler, gaussianhandle, model, stream1, stream2, event, event2);
+        const double current_score = CVVDPprocess(dstp, dststride, resize_width, resize_height, temporalRing1, temporalRing2, csf_handler, gaussianhandle, model, stream1, stream2, events);
         score_squareSum += std::pow(current_score, beta_t);
         double resQ;
         numFrame++;
