@@ -107,6 +107,7 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
                 fromPyrReduceToCSF(memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, channel, csfhandle, stream1);
                 //preGaussianPreCompute(memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
             }
+            computeD(memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle, stream1);
         } else {
             //here Lbkg is different, it is the mean.
             //now we need to take the mean.
@@ -115,6 +116,7 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
             for (int channel = 0; channel < 4; channel++){
                 baseBandPyrRefine<true, 1>(memPlace1[channel+5][band], memPlace1[channel][band], memPlace1[4][band], w*h, stream1);
                 baseBandPyrRefine<true, 1>(memPlace2[channel+5][band], memPlace2[channel][band], memPlace2[4][band], w*h, stream1);
+                computeD_baseband(memPlace1[channel][band], memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
             }
         }
 
@@ -122,20 +124,6 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
         h = (h+1)/2;
     }
     
-    w = width;
-    h = height;
-    for (int band = 0; band < levels; band++){
-        if (band != levels-1){
-            computeD(memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle, stream1);
-        } else {
-            //baseband
-            for (int channel = 0; channel < 4; channel++){
-                computeD_baseband(memPlace1[channel][band], memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
-            }
-        }
-        w = (w+1)/2;
-        h = (h+1)/2;
-    }
     //stream2 waits for stream1 to be done before freeing memory (memory of Lpyr2)
     GPU_CHECK(hipEventRecord(events[1], stream1));
     GPU_CHECK(hipStreamWaitEvent(stream2, events[1]));
