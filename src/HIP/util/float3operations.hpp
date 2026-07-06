@@ -1,6 +1,36 @@
 #ifndef FLOAT3OPHPP
 #define FLOAT3OPHPP
 
+__device__ __host__ void inline operator*=(float2& a, const int& b){
+    a.x *= b;
+    a.y *= b;
+}
+
+__device__ __host__ void inline operator+=(float2& a, const float2& b){
+    a.x += b.x;
+    a.y += b.y;
+}
+
+__device__ __host__ float2 inline operator/(const float2& a, const float2& b){
+    return {a.x/b.x, a.y/b.y};
+}
+
+__device__ __host__ float2 inline operator-(const float2& a, const float2& b){
+    return {a.x-b.x, a.y-b.y};
+}
+
+__device__ __host__ float2 inline operator*(const float2& a, const float& b){
+    return {a.x*b, a.y*b};
+}
+
+__device__ __host__ float2 inline min(const float2& a, const float& b){
+    return {min(a.x, b), min(a.y, b)};
+}
+
+__device__ __host__ float2 inline max(const float2& a, const float& b){
+    return {max(a.x, b), max(a.y, b)};
+}
+
 __device__ __host__ void inline operator/=(float3& a, const float3& b){
     a.x /= b.x;
     a.y /= b.y;

@@ -11,7 +11,8 @@ __device__ constexpr float gaussPyrKernel[5] = {0.25-kernel_a/2.,0.25, kernel_a,
 //pyramidSize is the stride of a "big" plane as a whole. mem_d needs to be offset prior using scaleOffset
 //memo: mem_d+scaleOffset+pyramidSize*n = mem_d+pyramidSize*n + scaleOffset (-> we only need mem_d+scaleOffset and not mem_d)
 //this kernel is called for all planes and then all scales successively except the smallest one
-__global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler csfhandle){
+//both sources are treated at once
+__global__ void fromPyrReduceToCSF_Kernel(float* mem_d, float* mem_d2, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler csfhandle){
     const int64_t base_x = blockIdx.x * 16;
     const int64_t base_y = blockIdx.y * 16;
     const int thx = threadIdx.x;
@@ -22,13 +23,17 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
     const int64_t small_height = (height+1)/2;
 
     //memory layout helpers
-    float* inputPlane = mem_d+channel*pyramidSize; //read from
-    float* Lbkg = mem_d+4*pyramidSize; //gets written by channel 0, read by others
-    float* smallScale = inputPlane+width*height; //gets written to
-    float* outputPlane = mem_d+(channel+5)*pyramidSize; //gets written to
-    __shared__ float sharedmem[23*23 + 10*10];
-    float* bufferInput = sharedmem; // 24*24 (16*16 padded by 4 all side)
-    float* bufferSmallScale = sharedmem+23*23; //10*10 (8*8 padded by 1 all side)
+    float* inputPlane1 = mem_d+channel*pyramidSize; //read from
+    float* inputPlane2 = mem_d2+channel*pyramidSize; //read from
+    float* Lbkg1 = mem_d+4*pyramidSize; //gets written by channel 0, read by others
+    float* Lbkg2 = mem_d2+4*pyramidSize; //gets written by channel 0, read by others
+    float* smallScale1 = inputPlane1+width*height; //gets written to
+    float* smallScale2 = inputPlane2+width*height; //gets written to
+    float* outputPlane1 = mem_d+(channel+5)*pyramidSize; //gets written to
+    float* outputPlane2 = mem_d2+(channel+5)*pyramidSize; //gets written to
+    __shared__ float2 sharedmem[23*23 + 10*10];
+    float2* bufferInput = sharedmem; // 24*24 (16*16 padded by 4 all side)
+    float2* bufferSmallScale = sharedmem+23*23; //10*10 (8*8 padded by 1 all side)
 
     //load input in memory
     #pragma unroll
@@ -42,13 +47,14 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
         if (y < 0) y = -y-1;
         if (y >= height) y = 2*height - y - 2;
 
-        bufferInput[i] = inputPlane[y*width+x];
+        bufferInput[i].x = inputPlane1[y*width+x];
+        bufferInput[i].y = inputPlane2[y*width+x];
     }
     __syncthreads();
 
     //compute into bufferSmallScale
     if (thx < 10 && thy < 10){
-        bufferSmallScale[thy*10+thx] = 0.f;
+        bufferSmallScale[thy*10+thx] = {0.f, 0.f};
         #pragma unroll
         for (int ix = 0; ix < 5; ix++){
             const float kernelx = gaussPyrKernel[ix];
@@ -56,7 +62,7 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
             for (int iy = 0; iy < 5; iy++){
                 const float kernel = kernelx*gaussPyrKernel[iy];
                 //for thx = 9, base column is 18
-                bufferSmallScale[thy*10+thx] += kernel*bufferInput[(2*thy+iy)*23+2*thx+ix];
+                bufferSmallScale[thy*10+thx] += bufferInput[(2*thy+iy)*23+2*thx+ix]*kernel;
             }
         }
     }
@@ -66,14 +72,17 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
         const int64_t new_x = (blockIdx.x*8 + thx);
         const int64_t new_y = (blockIdx.y*8 + thy);
         //if (new_x == 4 && new_y == 7) printf("got %f in channel %d band %d\n", bufferSmallScale[(thy+1)*10+thx+1], channel, scale);
-        if (new_x < small_width && new_y < small_height) smallScale[new_y*small_width+new_x] = bufferSmallScale[(thy+1)*10+thx+1];
+        if (new_x < small_width && new_y < small_height){
+            smallScale1[new_y*small_width+new_x] = bufferSmallScale[(thy+1)*10+thx+1].x;
+            smallScale2[new_y*small_width+new_x] = bufferSmallScale[(thy+1)*10+thx+1].y;
+        }
     }
     //no need to syncthreads because bufferSmallScale won't be written to again
 
     //use [0x0, 9x9] smallscale to expand and get local value for global x global y
     const int64_t glx = base_x + thx;
     const int64_t gly = base_y + thy;
-    float expanded = 0.f;
+    float2 expanded = {0.f, 0.f};
 
     const int parity_x = thx%2;
     const int parity_y = thy%2;
@@ -83,16 +92,19 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
         const float kernelx = 2*gaussPyrKernel[2*dx+parity_x];
         for (int dy = 0; dy < 3-parity_y; dy++){
             const float kernel = kernelx*2*gaussPyrKernel[2*dy+parity_y];
-            expanded += kernel*bufferSmallScale[((thy+1)/2 + dy) * 10 + ((thx+1)/2 + dx)];
+            expanded += bufferSmallScale[((thy+1)/2 + dy) * 10 + ((thx+1)/2 + dx)]*kernel;
         }
     }
 
     //clamp + export this value as Lbkg if channel = 0 or read otherwise
-    float lbkg = 0.f;
+    float2 lbkg = {0.f, 0.f};
     if (channel == 0){
         expanded = max(expanded, 0.01f);
         lbkg = expanded;
-        if (glx < width && gly < height) Lbkg[gly*width+glx] = lbkg;
+        if (glx < width && gly < height) {
+            Lbkg1[gly*width+glx] = lbkg.x;
+            Lbkg2[gly*width+glx] = lbkg.y;
+        }
     } else {
         int64_t ref_ind_x = glx;
         int64_t ref_ind_y = gly;
@@ -103,31 +115,35 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, const int64_t pyramidSiz
         if (ref_ind_y < 0) ref_ind_y = -ref_ind_y-1;
         if (ref_ind_y >= height) ref_ind_y = 2*height - ref_ind_y - 2;
 
-        lbkg = Lbkg[ref_ind_y*width+ref_ind_x];
+        lbkg.x = Lbkg1[ref_ind_y*width+ref_ind_x];
+        lbkg.y = Lbkg2[ref_ind_y*width+ref_ind_x];
     }
 
     //substract + refine to get final contrast on this local value
-    const float Ldiff = (bufferInput[(thy+4)*23 + thx+4] - expanded);
-    float contrast = min(Ldiff/lbkg, 1000.f);
+    const float2 Ldiff = (bufferInput[(thy+4)*23 + thx+4] - expanded);
+    float2 contrast = min(Ldiff/lbkg, 1000.f);
 
     if (scale != 0) contrast *= 2;
 
     //apply gaussian precompute (notably CSF)
-    //const float ch_gain = (channel == 1) ? 1.45f : 1.f;
+    const float ch_gain = (channel == 1) ? 1.45f : 1.f;
 
-    //const float S = csfhandle.computeSensitivityGPU(lbkg, scale, channel);
-    //contrast *= S * ch_gain;
+    const float S = csfhandle.computeSensitivityGPU(lbkg.x, scale, channel);
+    contrast *= S * ch_gain;
 
     //if (glx == 6 && gly == 4) printf("contrast %f on channel %d and scale %d\n", contrast, channel, scale);
-    if (glx < width && gly < height) outputPlane[gly*width+glx] = contrast;
+    if (glx < width && gly < height){
+        outputPlane1[gly*width+glx] = contrast.x;
+        outputPlane2[gly*width+glx] = contrast.y;
+    }
 }
 
-void fromPyrReduceToCSF(float* mem_d, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler& csfhandle, hipStream_t stream){
+void fromPyrReduceToCSF(float* mem_d, float* mem_d2, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler& csfhandle, hipStream_t stream){
     int th_x = 16;
     int th_y = 16;
     int64_t bl_x = (width+th_x-1)/th_x;
     int64_t bl_y = (height+th_y-1)/th_y;
-    fromPyrReduceToCSF_Kernel<<<dim3(bl_x, bl_y), dim3(th_x, th_y), 0, stream>>>(mem_d, pyramidSize, width, height, scale, channel, csfhandle);
+    fromPyrReduceToCSF_Kernel<<<dim3(bl_x, bl_y), dim3(th_x, th_y), 0, stream>>>(mem_d, mem_d2, pyramidSize, width, height, scale, channel, csfhandle);
     GPU_CHECK(hipGetLastError());
 }
 
@@ -277,67 +293,5 @@ int64_t LpyrMemoryNeedPerPlane(int64_t width, int64_t height, float ppd){
     }
     return res;
 }
-
-class LpyrManager{
-    std::vector<std::pair<int64_t, int64_t>> resolutions; //for each band
-    std::vector<float*> adresses;
-    int64_t planeOffset;
-    std::vector<float> band_frequencies;
-public: 
-    //plane contains 5 planes each twice the size
-    //the last plane will contain L_bkg while the first planes should contain the 4 temporal channels for the first half
-    LpyrManager(float* plane, const int64_t width, const int64_t height, const float ppd, int64_t bandOffset, CSF_Handler& csfhandle, const hipStream_t stream){
-        //We have a big merged kernel that fills in [mem_d+4*pyramidSize, mem_d+5*pyramidSize[ (Lbkg), that fills next scale in the input buffer and fills the output in [mem_d+5*pyramidSize, mem_d+9*pyramidSize[
-        //we repeat that for each scale except the last of course
-        band_frequencies = get_frequencies(width, height, ppd);
-        const int levels = band_frequencies.size();
-
-        planeOffset = bandOffset;
-
-        resolutions.resize(levels);
-        adresses.resize(levels);
-        int64_t w = width;
-        int64_t h = height;
-        float* p = plane;
-        for (int i = 0; i < levels; i++){
-            resolutions[i].first = w;
-            resolutions[i].second = h;
-            adresses[i] = p;
-
-            if (i != levels-1){
-                for (int channel = 0; channel < 4; channel++){
-                    fromPyrReduceToCSF(p, planeOffset, w, h, i, channel, csfhandle, stream);
-                }
-            } else {
-                //here Lbkg is different, it is the mean.
-                //now we need to take the mean. 
-                computeMean<1>(p, p+4*planeOffset, w*h, true, stream);
-                float* meanp = p+4*planeOffset;
-                for (int channel = 0; channel < 4; channel++){
-                    baseBandPyrRefine<true, 1>(p+(channel+5)*planeOffset, p+(channel)*planeOffset, meanp, w*h, stream);
-                }
-            }
-
-            p += w*h;
-            w = (w+1)/2;
-            h = (h+1)/2;
-        }
-    }
-    int getSize(){
-        return resolutions.size();
-    }
-    std::pair<int64_t, int64_t> getResolution(int i){
-        return resolutions[i];
-    }
-    float getFrequency(int i){
-        return band_frequencies[i];
-    }
-    float* getLbkg(int band){
-        return adresses[band]+4*planeOffset;
-    }
-    float* getContrast(int channel, int band){
-        return adresses[band]+(channel+5)*planeOffset;
-    }
-};
 
 }

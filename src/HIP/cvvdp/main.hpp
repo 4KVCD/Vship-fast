@@ -92,24 +92,40 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
         resizePlane(memPlace2[3][0], memPlace2[4][0], memPlace2[3][0], minwidth, minheight, width, height, stream2);
     }
 
-    const float ppd = model->get_screen_ppd();
-    LpyrManager LPyr1(mem_d, width, height, ppd, pyramidSize, csfhandle, stream1);
-    LpyrManager LPyr2(mem_d2, width, height, ppd, pyramidSize, csfhandle, stream2);
-
-
     //stream1 waits for stream2 to be done
     GPU_CHECK(hipEventRecord(events[0], stream2));
     GPU_CHECK(hipStreamWaitEvent(stream1, events[0]));
     //now we only use stream1, this is the time for merging both sources
-    
+
+    const float ppd = model->get_screen_ppd();
+
     w = width;
     h = height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
             for (int channel = 0; channel < 4; channel++){
-                preGaussianPreCompute(memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
+                fromPyrReduceToCSF(memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, channel, csfhandle, stream1);
+                //preGaussianPreCompute(memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle, stream1);
             }
-            //it writes on its source
+        } else {
+            //here Lbkg is different, it is the mean.
+            //now we need to take the mean.
+            computeMean<1>(memPlace1[0][band], memPlace1[4][band], w*h, true, stream1);
+            computeMean<1>(memPlace2[0][band], memPlace2[4][band], w*h, true, stream1);
+            for (int channel = 0; channel < 4; channel++){
+                baseBandPyrRefine<true, 1>(memPlace1[channel+5][band], memPlace1[channel][band], memPlace1[4][band], w*h, stream1);
+                baseBandPyrRefine<true, 1>(memPlace2[channel+5][band], memPlace2[channel][band], memPlace2[4][band], w*h, stream1);
+            }
+        }
+
+        w = (w+1)/2;
+        h = (h+1)/2;
+    }
+    
+    w = width;
+    h = height;
+    for (int band = 0; band < levels; band++){
+        if (band != levels-1){
             computeD(memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle, stream1);
         } else {
             //baseband
@@ -236,7 +252,7 @@ public:
 
         const uint levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
 
-        events.resize(levels+1);
+        events.resize(2);
         for (uint i = 0; i < events.size(); i++){
             GPU_CHECK(hipEventCreate(events.data()+i));
         }
