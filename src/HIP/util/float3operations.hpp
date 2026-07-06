@@ -6,15 +6,6 @@ __device__ __host__ void inline operator*=(float2& a, const int& b){
     a.y *= b;
 }
 
-__device__ __host__ void inline operator+=(float2& a, const float2& b){
-    a.x += b.x;
-    a.y += b.y;
-}
-
-__device__ __host__ float2 inline operator/(const float2& a, const float2& b){
-    return {a.x/b.x, a.y/b.y};
-}
-
 __device__ __host__ float2 inline operator-(const float2& a, const float2& b){
     return {a.x-b.x, a.y-b.y};
 }
@@ -126,6 +117,15 @@ __device__ __host__ float3 makeFloat3(const float& a, const float& b, const floa
 }
 
 #ifndef __HIPCC__
+
+__device__ __host__ void inline operator+=(float2& a, const float2& b){
+    a.x += b.x;
+    a.y += b.y;
+}
+
+__device__ __host__ float2 inline operator/(const float2& a, const float2& b){
+    return {a.x/b.x, a.y/b.y};
+}
 
 __device__ __host__ void inline operator*=(float3& a, const float3& b){
    a.x *= b.x;
