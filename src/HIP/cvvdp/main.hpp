@@ -20,7 +20,7 @@
 
 namespace cvvdp{
 
-double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width, int64_t resize_height, TemporalRing& temporalRing1, TemporalRing& temporalRing2, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model, hipStream_t stream1, hipStream_t stream2, std::vector<hipEvent_t> events){
+double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width, int64_t resize_height, TemporalRing& temporalRing1, TemporalRing& temporalRing2, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model, hipStream_t stream1, hipStream_t stream2, hipEvent_t event1, hipEvent_t event2){
     const int64_t minwidth = temporalRing1.width;
     const int64_t minheight = temporalRing1.height;
     const int64_t width = resize_width;
@@ -93,8 +93,8 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     }
 
     //stream1 waits for stream2 to be done
-    GPU_CHECK(hipEventRecord(events[0], stream2));
-    GPU_CHECK(hipStreamWaitEvent(stream1, events[0]));
+    GPU_CHECK(hipEventRecord(event1, stream2));
+    GPU_CHECK(hipStreamWaitEvent(stream1, event1));
     //now we only use stream1, this is the time for merging both sources
 
     const float ppd = model->get_screen_ppd();
@@ -125,8 +125,8 @@ double CVVDPprocess(const uint8_t *dstp, int64_t dststride, int64_t resize_width
     }
     
     //stream2 waits for stream1 to be done before freeing memory (memory of Lpyr2)
-    GPU_CHECK(hipEventRecord(events[1], stream1));
-    GPU_CHECK(hipStreamWaitEvent(stream2, events[1]));
+    GPU_CHECK(hipEventRecord(event2, stream1));
+    GPU_CHECK(hipStreamWaitEvent(stream2, event2));
     GPU_CHECK(hipFreeAsync(mem_d2, stream2));
     //the complete full distortion map is stored in Lpyr1
     //and we can use Lpyr1 Lbkg place as temporary storage for pooling
@@ -196,7 +196,8 @@ class CVVDPComputingImplementation{
     int64_t source_height = 0;
     hipStream_t stream1 = 0;
     hipStream_t stream2 = 0;
-    std::vector<hipEvent_t> events;
+    hipEvent_t event1;
+    hipEvent_t event2;
     int gpu_id;
 public:
     int64_t resize_width = 0;
@@ -240,10 +241,8 @@ public:
 
         const uint levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
 
-        events.resize(2);
-        for (uint i = 0; i < events.size(); i++){
-            GPU_CHECK(hipEventCreate(events.data()+i));
-        }
+        GPU_CHECK(hipEventCreate(&event1));
+        GPU_CHECK(hipEventCreate(&event2));
         GPU_CHECK(hipStreamCreate(&stream1));
         GPU_CHECK(hipStreamCreate(&stream2));
 
@@ -266,9 +265,8 @@ public:
         delete model;
         GPU_CHECK(hipStreamDestroy(stream1));
         GPU_CHECK(hipStreamDestroy(stream2));
-        for (uint i = 0; i < events.size(); i++){
-            GPU_CHECK(hipEventDestroy(events[i]));
-        }
+        GPU_CHECK(hipEventDestroy(event1));
+        GPU_CHECK(hipEventDestroy(event2));
     }
     void loadImageToRing(const uint8_t *srcp1[3], const uint8_t *srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         GPU_CHECK(hipSetDevice(gpu_id));
@@ -382,7 +380,7 @@ public:
     }
     double run(const uint8_t *dstp, int64_t dststride, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         loadImageToRing(srcp1, srcp2, lineSize, lineSize2);
-        const double current_score = CVVDPprocess(dstp, dststride, resize_width, resize_height, temporalRing1, temporalRing2, csf_handler, gaussianhandle, model, stream1, stream2, events);
+        const double current_score = CVVDPprocess(dstp, dststride, resize_width, resize_height, temporalRing1, temporalRing2, csf_handler, gaussianhandle, model, stream1, stream2, event1, event2);
         score_squareSum += std::pow(current_score, beta_t);
         double resQ;
         numFrame++;
