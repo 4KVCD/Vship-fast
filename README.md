@@ -229,7 +229,7 @@ SSIMU2 Implementation | HW Type | Time
 --- | --- | ---
 JXL | CPU | 115s
 ssimulacra2_rs | CPU | X s
-fssimu2 | CPU | 60.222s
+fmetrics | CPU | 38.084s
 VSZIP | CPU | 29.978s
 --- **CUDA** --- | --- | ---
 Vapoursynth Vship | GPU | 10.351s
@@ -240,6 +240,7 @@ FFVship | GPU | 10.085s
 
 Butteraugli Implementation | HW Type | Time
 --- | --- | ---
+fmetrics | CPU | 275s
 JXL | CPU | 239s
 --- **CUDA** --- | --- | ---
 Vapoursynth Vship | GPU | 39.528s
@@ -252,11 +253,11 @@ CVVDP Implementation | HW Type | Time
 --- | --- | ---
 Original Repo | CPU | 1632s
 FFVship (Vulkan llvmPipe) | CPU | 499s
-fcvvdp | CPU | 360.893s
+fmetrics | CPU | 221s
 Original Repo | GPU | 162s
 --- **CUDA** --- | ---
 Vapoursynth Vship | GPU | 28.558s
-FFVship | GPU | 23.197s
+FFVship | GPU | 20.394s
 --- **Vulkan** --- | ---
 Vapoursynth Vship | GPU | 53.750s
 FFVship | GPU | 41.297s
