@@ -73,10 +73,7 @@ class GpuWorker {
     int64_t lineSize2[3];
 
     MetricType selected_metric;
-
-    Vship_SSIMU2Handler ssimu2worker;
-    Vship_ButteraugliHandler butterworker;
-    Vship_CVVDPHandler cvvdpworker;
+    void* handler;
 
   public:
     GpuWorker(MetricType metric, Vship_Colorspace_t source_colorspace, Vship_Colorspace_t encoded_colorspace, const int64_t lineSize[3], const int64_t lineSize2[3], float fps, MetricParameters metricParam){
@@ -97,26 +94,31 @@ class GpuWorker {
     compute_metric_score(const uint8_t* srcp1[3], const uint8_t* srcp2[3]) {
 
         if (selected_metric == MetricType::SSIMULACRA2) {
-            double s;
-            Vship_Exception err = Vship_ComputeSSIMU2(ssimu2worker, &s, srcp1, srcp2, lineSize, lineSize2);
+            Vship_ScoreSSIMULACRA2 scoreStruct;
+            scoreStruct.structType = Vship_StructScoreSSIMULACRA2;
+            Vship_Exception err = Vship_ComputeHandler(handler, (void*)&scoreStruct, srcp1, srcp2, lineSize, lineSize2);
             if (err != Vship_NoError){
                 char errmsg[1024];
-                int l = Vship_SSIMU2GetDetailedLastError(ssimu2worker, errmsg, 1024);
+                int l = Vship_GetDetailedLastErrorHandler(handler, errmsg, 1024);
                 if (l == 0) {
                     //error occured in the return error
                     Vship_GetDetailedLastError(errmsg, 1024);
                 }
                 std::cerr << " error: " << errmsg << std::endl;
             }
+            double s = scoreStruct.score;
             return {{s, s, s}, err};
         }
 
         if (selected_metric == MetricType::Butteraugli) {
-            Vship_ButteraugliScore butterscore;
-            Vship_Exception err = Vship_ComputeButteraugli(butterworker, &butterscore, nullptr, 0, srcp1, srcp2, lineSize, lineSize2);
+            Vship_ScoreButteraugli butterscore;
+            butterscore.structType = Vship_StructScoreButteraugli;
+            butterscore.dstp = nullptr;
+            butterscore.dststride = 0;
+            Vship_Exception err = Vship_ComputeHandler(handler, (void*)&butterscore, srcp1, srcp2, lineSize, lineSize2);
             if (err != Vship_NoError){
                 char errmsg[1024];
-                int l = Vship_ButteraugliGetDetailedLastError(butterworker, errmsg, 1024);
+                int l = Vship_GetDetailedLastErrorHandler(handler, errmsg, 1024);
                 if (l == 0) {
                     //error occured in the return error
                     Vship_GetDetailedLastError(errmsg, 1024);
@@ -127,17 +129,21 @@ class GpuWorker {
         }
 
         if (selected_metric == MetricType::CVVDP){
-            double s;
-            Vship_Exception err = Vship_ComputeCVVDP(cvvdpworker, &s, nullptr, 0, srcp1, srcp2, lineSize, lineSize2);
+            Vship_ScoreCVVDP cvvdpScore;
+            cvvdpScore.structType = Vship_StructScoreCVVDP;
+            cvvdpScore.dstp = nullptr;
+            cvvdpScore.dststride = 0;
+            Vship_Exception err = Vship_ComputeHandler(handler, (void*)&cvvdpScore, srcp1, srcp2, lineSize, lineSize2);
             if (err != Vship_NoError){
                 char errmsg[1024];
-                int l = Vship_CVVDPGetDetailedLastError(cvvdpworker, errmsg, 1024);
+                int l = Vship_GetDetailedLastErrorHandler(handler, errmsg, 1024);
                 if (l == 0) {
                     //error occured in the return error
                     Vship_GetDetailedLastError(errmsg, 1024);
                 }
                 std::cerr << " error: " << errmsg << std::endl;
             }
+            double s = cvvdpScore.score;
             return {{s, s, s}, err};
         }
 
@@ -145,12 +151,12 @@ class GpuWorker {
         return {{0.0f, 0.0f, 0.0f}, Vship_BadErrorType};
     }
 
-    static uint8_t *allocate_external_rgb_buffer(uint64_t bytes) {
+    static uint8_t *allocate_external_rgb_buffer(uint64_t bytes, int gpu_id) {
         const size_t buffer_size_bytes = bytes * 3;
         uint8_t *buffer_ptr = nullptr;
 
-        const Vship_Exception result = Vship_PinnedMalloc(
-            reinterpret_cast<void **>(&buffer_ptr), buffer_size_bytes);
+        const Vship_Exception result = Vship_PinnedMalloc2(
+            reinterpret_cast<void **>(&buffer_ptr), buffer_size_bytes, gpu_id);
 
         ASSERT_WITH_MESSAGE(
             result == Vship_NoError && buffer_ptr != nullptr,
@@ -159,9 +165,9 @@ class GpuWorker {
         return buffer_ptr;
     }
 
-    static void deallocate_external_buffer(uint8_t *buffer_ptr) {
+    static void deallocate_external_buffer(uint8_t *buffer_ptr, int gpu_id) {
         if (buffer_ptr != nullptr) {
-            Vship_PinnedFree(buffer_ptr);
+            Vship_PinnedFree2(buffer_ptr, gpu_id);
         }
     }
 
@@ -169,11 +175,32 @@ class GpuWorker {
     void allocate_gpu_memory(float fps, MetricParameters metricParam) {
         Vship_Exception err;
         if (selected_metric == MetricType::SSIMULACRA2) {
-            err = Vship_SSIMU2Init2(&ssimu2worker, image_colorspace, encoded_colorspace, metricParam.gpu_id);
+            Vship_InitSSIMULACRA2_1 initStruct;
+            initStruct.structType = Vship_StructInitSSIMULACRA2_1;
+            initStruct.src_colorspace = image_colorspace;
+            initStruct.dis_colorspace = encoded_colorspace;
+            initStruct.gpu_id = metricParam.gpu_id;
+            err = Vship_InitHandler(&handler, (void*)&initStruct);
         } else if (selected_metric == MetricType::Butteraugli) {
-            err = Vship_ButteraugliInit2(&butterworker, image_colorspace, encoded_colorspace, metricParam.Qnorm, metricParam.intensity_target_nits, metricParam.gpu_id);
+            Vship_InitButteraugli_1 initStruct;
+            initStruct.structType = Vship_StructInitButteraugli_1;
+            initStruct.src_colorspace = image_colorspace;
+            initStruct.dis_colorspace = encoded_colorspace;
+            initStruct.Qnorm = metricParam.Qnorm;
+            initStruct.intensity_multiplier = metricParam.intensity_target_nits;
+            initStruct.gpu_id = metricParam.gpu_id;
+            err = Vship_InitHandler(&handler, (void*)&initStruct);
         } else if (selected_metric == MetricType::CVVDP){
-            err = Vship_CVVDPInit3(&cvvdpworker, image_colorspace, encoded_colorspace, fps, metricParam.resizeToDisplay, metricParam.model_key.c_str(), metricParam.model_config_json.c_str(), metricParam.gpu_id);
+            Vship_InitCVVDP_1 initStruct;
+            initStruct.structType = Vship_StructInitCVVDP_1;
+            initStruct.src_colorspace = image_colorspace;
+            initStruct.dis_colorspace = encoded_colorspace;
+            initStruct.fps = fps;
+            initStruct.resizeToDisplay = metricParam.resizeToDisplay;
+            initStruct.model_key_cstr = metricParam.model_key.c_str();
+            initStruct.model_config_json_cstr = metricParam.model_config_json.c_str();
+            initStruct.gpu_id = metricParam.gpu_id;
+            err = Vship_InitHandler(&handler, (void*)&initStruct);
         } else {
             ASSERT_WITH_MESSAGE(false,
                                 "Unknown metric during memory allocation.");
@@ -188,13 +215,7 @@ class GpuWorker {
     }
 
     void deallocate_gpu_memory() {
-        if (selected_metric == MetricType::SSIMULACRA2) {
-            Vship_SSIMU2Free(ssimu2worker);
-        } else if (selected_metric == MetricType::Butteraugli) {
-            Vship_ButteraugliFree(butterworker);
-        } else if (selected_metric == MetricType::CVVDP){
-            Vship_CVVDPFree(cvvdpworker);
-        }
+        Vship_FreeHandler(handler);
     }
 };
 

@@ -310,14 +310,6 @@ int main(int argc, char **argv) {
         std::cerr << errmsg << std::endl;
         return 1;
     }
-    //not needed anymore we defined gpu_id in handler directly
-    err = Vship_SetDevice(cli_args.metricParam.gpu_id);
-    if (err != Vship_NoError){
-        char errmsg[1024];
-        Vship_GetDetailedLastError(errmsg, 1024);
-        std::cerr << errmsg << std::endl;
-        return 1;
-    }
 
     //force -g,-t and --every at 1 when cvvdp is used because the metric is temporal
     if (cli_args.metric == MetricType::CVVDP) {
@@ -441,7 +433,7 @@ int main(int argc, char **argv) {
     for (unsigned int i = 0; i < num_frame_buffer; ++i) {
         //we allocate so that each frame may it be source or encoded can fit in
         //we use +1 for the stride because by offsetting left border, we might go to after the last line slighly. (so we allocate one more line to make it defined in memory)
-        frame_buffers.insert(GpuWorker::allocate_external_rgb_buffer(std::max(v1.getBufferSize(), v2.getBufferSize())));
+        frame_buffers.insert(GpuWorker::allocate_external_rgb_buffer(std::max(v1.getBufferSize(), v2.getBufferSize()), cli_args.metricParam.gpu_id));
     }
 
     frame_pool_t frame_buffer_pool(frame_buffers);
@@ -527,7 +519,7 @@ int main(int argc, char **argv) {
 
     //cleanup
     for (auto& el: frame_buffers) {
-        GpuWorker::deallocate_external_buffer(el);
+        GpuWorker::deallocate_external_buffer(el, cli_args.metricParam.gpu_id);
     }
 
     if (!cli_args.live_index_score_output){
