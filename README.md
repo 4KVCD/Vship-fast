@@ -257,7 +257,7 @@ fmetrics | CPU | 221s
 Original Repo | GPU | 162s
 --- **CUDA** --- | ---
 Vapoursynth Vship | GPU | 28.558s
-FFVship | GPU | 20.394s
+FFVship | GPU | 16.184s
 --- **Vulkan** --- | ---
 Vapoursynth Vship | GPU | 53.750s
 FFVship | GPU | 41.297s
