@@ -365,8 +365,8 @@ public:
         //we put the frame's planes on GPU
 
         //colorspace conversion at this point
-        XYZ_to_dkl_DisplayEncode(src1_d, ref_colorspace.primaries, ref_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream1);
-        XYZ_to_dkl_DisplayEncode(src2_d, dis_colorspace.primaries, dis_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream2);
+        linRGB_to_dkl_DisplayEncode(src1_d, ref_colorspace.primaries, ref_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream1);
+        linRGB_to_dkl_DisplayEncode(src2_d, dis_colorspace.primaries, dis_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream2);
         //and we are done, the frame is loaded in the ring with the right colorspace, next step is temporal filtering
     }
     double run(const uint8_t *dstp, int64_t dststride, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){

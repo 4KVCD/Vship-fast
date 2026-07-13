@@ -29,7 +29,7 @@ __device__ void inline displayEncode_Device<Vship_TRC_PQ>(float& a, float Y_peak
 }
 
 template<Vship_Primaries_t Source_Primary, Vship_TransferFunction_t transferFunction>
-__global__ void XYZ_to_dkl_DisplayEncode_Kernel(float* p1, float* p2, float* p3, float Y_peak, float Y_black, float Y_refl, float exposure, int64_t width){
+__global__ void linRGB_to_dkl_DisplayEncode_Kernel(float* p1, float* p2, float* p3, float Y_peak, float Y_black, float Y_refl, float exposure, int64_t width){
     const int64_t x = threadIdx.x + blockIdx.x * blockDim.x;
     if (x >= width) return;
 
@@ -47,52 +47,52 @@ __global__ void XYZ_to_dkl_DisplayEncode_Kernel(float* p1, float* p2, float* p3,
 }
 
 template<Vship_TransferFunction_t transferFunction>
-void inline XYZ_to_dkl_DisplayEncode2(float* src_d[3], Vship_Primaries_t Source_Primary, float Y_peak, float Y_black, float Y_refl, float exposure, int64_t width, hipStream_t stream){
+void inline linRGB_to_dkl_DisplayEncode2(float* src_d[3], Vship_Primaries_t Source_Primary, float Y_peak, float Y_black, float Y_refl, float exposure, int64_t width, hipStream_t stream){
     int th_x = 256;
     int64_t bl_x = (width+th_x-1)/th_x;
     switch (Source_Primary){
         case Vship_PRIMARIES_INTERNAL:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_INTERNAL, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_INTERNAL, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_BT709:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT709, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT709, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_BT470_BG:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT470_BG, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT470_BG, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_BT470_M:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT470_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT470_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_ST170_M:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_ST170_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_ST170_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_ST240_M:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_ST240_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_ST240_M, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_BT2020:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT2020, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_BT2020, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
         case Vship_PRIMARIES_DisplayP3:
-            XYZ_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_DisplayP3, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
+            linRGB_to_dkl_DisplayEncode_Kernel<Vship_PRIMARIES_DisplayP3, transferFunction><<<dim3(bl_x), dim3(th_x), 0, stream>>>(src_d[0], src_d[1], src_d[2], Y_peak, Y_black, Y_refl, exposure, width);
             break;
     }
     GPU_CHECK(hipGetLastError());
 }
 
-void inline XYZ_to_dkl_DisplayEncode(float* src_d[3], Vship_Primaries_t Source_Primary, Vship_TransferFunction_t transferFunction, float Y_peak, float Y_black, float Y_refl, float exposure, DisplayColorspace isHDR, int64_t width, hipStream_t stream){
+void inline linRGB_to_dkl_DisplayEncode(float* src_d[3], Vship_Primaries_t Source_Primary, Vship_TransferFunction_t transferFunction, float Y_peak, float Y_black, float Y_refl, float exposure, DisplayColorspace isHDR, int64_t width, hipStream_t stream){
     if (!isHDR){
         transferFunction = Vship_TRC_BT709;
         //we supppose that the input is sRGB no matter the actual input since the screen will display it as is
     }
     switch (transferFunction){
         case Vship_TRC_PQ:
-            XYZ_to_dkl_DisplayEncode2<Vship_TRC_PQ>(src_d, Source_Primary, Y_peak, Y_black, Y_refl, exposure, width, stream);
+            linRGB_to_dkl_DisplayEncode2<Vship_TRC_PQ>(src_d, Source_Primary, Y_peak, Y_black, Y_refl, exposure, width, stream);
             break;
         //treated same as BT709/sRGB
         case Vship_TRC_Linear:
         case Vship_TRC_HLG:
         default:
-            XYZ_to_dkl_DisplayEncode2<Vship_TRC_BT709>(src_d, Source_Primary, Y_peak, Y_black, Y_refl, exposure, width, stream);
+            linRGB_to_dkl_DisplayEncode2<Vship_TRC_BT709>(src_d, Source_Primary, Y_peak, Y_black, Y_refl, exposure, width, stream);
             break;
     }
 }
