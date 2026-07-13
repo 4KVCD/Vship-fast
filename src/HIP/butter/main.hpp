@@ -231,6 +231,9 @@ public:
         GPU_CHECK(hipSetDevice(gpu_id));
         return butterprocess(dstp, dststride, srcp1, srcp2, pinned, gaussianhandle, converter1, converter2, lineSize, lineSize2, width, height, Qnorm, intensity_multiplier, stream);
     }
+    std::pair<int64_t, int64_t> getDistmapResolution(){
+        return {width, height};
+    }
 };
 
 }

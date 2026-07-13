@@ -97,5 +97,4 @@ void inline linRGB_to_dkl_DisplayEncode(float* src_d[3], Vship_Primaries_t Sourc
     }
 }
 
-
 }

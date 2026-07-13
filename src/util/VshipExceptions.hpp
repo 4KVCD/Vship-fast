@@ -34,9 +34,10 @@ enum VSHIPEXCEPTTYPE{
     BadHandler = 10,
     BadPointer = 11,
     NotSupported = 15,
+    BadInputStructType = 16,
 
     //should not be used
-    BadErrorType = 16,
+    BadErrorType = 17,
 };
 
 std::string errorMessage(VSHIPEXCEPTTYPE type){
@@ -88,6 +89,9 @@ std::string errorMessage(VSHIPEXCEPTTYPE type){
 
         case NotSupported:
         return "NotSupported: The libvship library that is used does not yet implement the requested feature";
+
+        case BadInputStructType:
+        return "BadInputStructType: You called a function with an argument for which it cannot be used. (Vship C API related)";
 
         case BadErrorType:
         return "BadErrorType: There was an unknown error";

@@ -279,6 +279,9 @@ public:
         posttreatment(outputScoresCPU, Qnorm);
         return std::make_tuple((double)outputScoresCPU[0], (double)outputScoresCPU[1], (double)outputScoresCPU[2]);
     }
+    std::pair<int64_t, int64_t> getDistmapResolution(){
+        return {(int64_t)width, (int64_t)height};
+    }
 };
 
 }
