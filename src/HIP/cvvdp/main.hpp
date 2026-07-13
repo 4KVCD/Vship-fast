@@ -365,19 +365,10 @@ public:
         //std::cout << "Y_peak, Y_black, Y_refl, exposure : " << Y_peak << " " <<  Y_black << " " << Y_refl << " " << exposure << std::endl;
 
         //we put the frame's planes on GPU
-        //do we write directly in final after stride eliminaation?
-        for (int i = 0; i < 3; i++){
-            displayEncode(src1_d[i], minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, ref_colorspace.transferFunction, isHDR, stream1);
-            displayEncode(src2_d[i], minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, dis_colorspace.transferFunction, isHDR, stream2);
-        }
-
-        //go to XYZ
-        VshipColorConvert::primariesToPrimaries(src1_d[0], src1_d[1], src1_d[2], minwidth*minheight, ref_colorspace.primaries, Vship_PRIMARIES_INTERNAL, stream1);
-        VshipColorConvert::primariesToPrimaries(src2_d[0], src2_d[1], src2_d[2], minwidth*minheight, dis_colorspace.primaries, Vship_PRIMARIES_INTERNAL, stream2);
 
         //colorspace conversion at this point
-        XYZ_to_dkl(src1_d, minwidth*minheight, stream1);
-        XYZ_to_dkl(src2_d, minwidth*minheight, stream2);
+        XYZ_to_dkl_DisplayEncode(src1_d, ref_colorspace.primaries, ref_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream1);
+        XYZ_to_dkl_DisplayEncode(src2_d, dis_colorspace.primaries, dis_colorspace.transferFunction, Y_peak, Y_black, Y_refl, exposure, isHDR, minwidth*minheight, stream2);
         //and we are done, the frame is loaded in the ring with the right colorspace, next step is temporal filtering
     }
     double run(const uint8_t *dstp, int64_t dststride, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
