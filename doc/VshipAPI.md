@@ -6,7 +6,7 @@ Vship API has been made to allow low level access to Vship interal metric withou
 
 ## How to install VshipAPI
 
-VshipAPI is included when installing Vship the vapoursynth plugin. The API itself is contained within vship.dll which also contains the vapoursynth API support. As such, installing VshipAPI only requires doing `make build` (or `make buildcuda` for nvidia GPUs) and `make install`. For windows, there is no standard lib installation folder. As such, the compiled .dll which can also be found on the release page and [VshipAPI Header](../src/VshipAPI.h) need to be installed manually at a known place for use and compilation of your software.
+VshipAPI is included when installing Vship the vapoursynth plugin. The API itself is contained within vship.dll which also contains the vapoursynth API support. As such, installing VshipAPI only requires doing `make build BACKEND=<YOUR BACKEND>` and `make install`. For windows, there is no standard lib installation folder. As such, the compiled .dll which can also be found on the release page and [VshipAPI Header](../src/VshipAPI.h) need to be installed manually at a known place for use and compilation of your software.
 
 ## Usage of VshipAPI inside the code
 
@@ -36,7 +36,7 @@ As such compilation is as simple as
 Note that the -I and -L arguments are optional depending on the placement of the header and library. 
 For the resulting executable to work, it will need to be able to find libvship.so. On Ubuntu, it might be necessary to add the library path (/usr/local/lib) to LD_LIBRARY_PATH environment variable. Another option is to put libvship.so/dll next to your executable.
 
-To verify that everything works for you, you can try compiling yourself [this example](../test/apitest.c)
+To verify that everything works for you, you can try compiling yourself [this example](../examples/vshipAPIExample.cpp) which is the result of the interactive example.
 
 # API detailed tutorial and description
 
@@ -78,9 +78,11 @@ Thanks to our macro, the error message will be displayed to the user before exit
 ```Cpp
 //we supposed the same for source and distorted but they can have different colorspaces
 //here we define the classic Limited BT709 YUV420 source
-Vship_Colorspace_t colorspace;
+Vship_Colorspace_t colorspace = {0};
 colorspace.width = image_width;
 colorspace.height = image_height;
+colorspace.target_width = -1; //same as width
+colorspace.target_height = -1; //same as height
 colorspace.sample = Vship_SampleUINT8;
 colorspace.range = Vship_RangeLimited;
 colorspace.subsampling = {1, 1};
@@ -92,13 +94,27 @@ colorspace.primaries = Vship_PRIMARIES_BT709;
 
 ### Create a Butteraugli Handler
 
-Vship being made for maximal throughput, it does some preprocessing. A handler may be used for processing a lot of frames (but only one at a time). To create a handler, you can do this
+Vship being made for maximal throughput, it does some preprocessing. A handler may be used for processing a lot of frames (but only one at a time). To create a handler, we first define a wrapper function to make life easier
 
 ```Cpp
-Vship_ButteraugliHandler butterhandler;
-//we put the colorspace twice, one for source and one for distorted
-//This will initialize a handler with intensity_target 203 in butteraugli
-ErrorCheck(Vship_ButteraugliInit(&butterhandler, colorspace, colorspace, 203.));
+void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, float intensity_multiplier, int Qnorm){
+    Vship_InitButteraugli_1 initStruct = {
+        Vship_StructInitButteraugli_1,
+        src, dst,
+        Qnorm,
+        intensity_multiplier,
+        0 //gpu_id
+    };
+    void* handler;
+    ErrorCheck(Vship_InitHandler(&handler, (void*)&initStruct));
+    return handler;
+}
+```
+
+then we can use it in our code
+
+```Cpp
+void* butterhandler = getButteraugliHandler(colorspace, colorspace, 203.f, 5);
 ```
 
 ### Frame Processing
@@ -115,15 +131,24 @@ const int64_t strides2[3];
 //the result will be here!
 //let's allocate the space required to store the distortion map. It is always float
 //you can use image_width as a stride in this case
-const uint8* distortionMap = (uint8_t*)malloc(sizeof(float)*image_height*image_stride);
+const float* distortionMap = (float*)malloc(sizeof(float)*image_height*image_width);
 
-Vship_ButteraugliScore score;
+Vship_ScoreButteraugli scoreStruct = {
+    Vship_StructScoreButteraugli,
+    0, 0, 0, //output norms
+    (uint8_t*)distortionMap, //distmap pointer
+    image_width*sizeof(float) //distmap stride
+};
 
 //ask vship to compute!
 //it will handle color conversion and metric computing
-ErrorCheck(Vship_ComputeButteraugliUint16(butterhandler, &score, distortionMap, image_stride, image1, image2, strides1, strides2));
+ErrorCheck(Vship_ComputeHandler(butterhandler, &scoreStruct, im1.csrc, im2.csrc, im1.lineSize, im2.lineSize));
 
-//now score contains butteraugli scores and distortionMap contains the distortion map!
+//now score contains butteraugli scores and distortionMap contains the distortion map! which you can print:
+std::cout << "Butteraugli norms (3/5/inf): " << scoreStruct.norm3 << "/" << scoreStruct.normQ << "/" << scoreStruct.norminf << std::endl;
+
+//error in middle of image:
+std::cout << "Error in middle of image: " << distortionMap[image_width*image_height/2 + image_width/2] << std::endl;
 ```
 
 ### Cleanup
@@ -135,7 +160,7 @@ We want to avoid leaks so there is a little step to add
 free(distortionMap);
 
 //free the butteraugli handler
-ErrorCheck(Vship_ButteraugliFree(butterhandler));
+ErrorCheck(Vship_FreeHandler(butterhandler));
 ```
 
 ## Good practices
@@ -146,15 +171,17 @@ There is 3 levels of error managment that are really applicable with vship.
 
 level 1 is using the error returned by function (type Vship_Exception) and use Vship_GetErrorMessage to obtain its meaning while considering the function failed. This returns some basic informations about why it failed.
 
-level 2 allows to get more detail and consist in Vship_GetDetailedLastError. However in threaded scenarios where multiple errors could arise at the same time in multiple handlers, this function might not be enough.
+level 2 allows to get more detail for a human and consist in Vship_GetDetailedLastError. However in threaded scenarios where multiple errors could arise at the same time in multiple handlers, this function might not be enough.
 
-level 3 is the above but using Vship_`Metric`GetDetailedLastError which returns the last error of a specific handler which alleviate threading issues.
+level 3 is the above but using Vship_GetDetailedLastErrorHandler which returns the last error of a specific handler which alleviate threading issues.
 
 ### Performance concerns
 
 It is important if you wish to maximize throughput to create about 3 handlers that process frames in parallel. You can test the importance of this by playing with the `-g` option of FFVship. 
 
 Note that it can increase VRAM usage. You can verify the amount of VRAM used per working handler [here (SSIMU2)](SSIMULACRA2.md) and [here (Butteraugli)](BUTTERAUGLI.md). You can also retrieve the total amount of VRAM of the GPU using `Vship_GetDeviceInfo`.
+
+Note that for temporal metric, this might not be possible, since different handlers will have different temporal buffers and it makes it impossible to perfectly combine the resulting scores of 2 different handlers.
 
 ### Video Metrics
 
@@ -175,33 +202,50 @@ v.minorMinor; //0
 // => 4.0.0
 ```
 
-It is also possible to retrieve the type of GPU present (NVIDIA or HIP) using v.backend
+It is also possible to retrieve the type of GPU present (Cuda, HIP or Vulkan) using v.backend
 
 ### Vship_GetDeviceCount(int* number)
 
 This function returns an exception if it failed to get the wanted information. In case of success, the integer passed as an argument will be equal to the number of GPU detected by Vship.
-
-### Vship_SetDevice(int gpu_id)
-
-This function allows to choose the detected GPU to run vship on. If the gpu_id chosen is not valid, an exception is returned. You can have information to choose the GPU you wish to use using the following function. But in general, GPU 0 is the most relevant GPU to use.
 
 ### Vship_GetDeviceInfo(Vship_DeviceInfo* device_info, int gpu_id)
 
 This function allows to retrieve some GPU information in the Vship_DeviceInfo struct defined here:
 
 ```Cpp
-struct{
+//if set to false means that the gpu does not support it
+typedef struct Vship_VulkanFeatureMatrix{
+    bool storageBuffer16BitAccess;
+    bool uniformAndStorageBuffer16BitAccess; //not required
+    bool variablePointersStorageBuffer;
+    bool variablePointers;
+    bool storagePushConstant8; //not required
+    bool storageBuffer8BitAccess;
+    bool uniformAndStorageBuffer8BitAccess; //not required
+    bool shaderFloat16; //not required, fp16 is disabled by default in vulkan build
+    bool shaderFloat64; //not required
+    bool shaderInt8;
+    bool shaderInt16;
+    bool shaderInt64;
+    bool bufferDeviceAddress;
+    bool shaderStorageBufferArrayDynamicIndexing;
+    bool synchronization2;
+    bool logicOp;
+    bool FutureFeatures[10]; //reserved for future use
+} Vship_VulkanFeatureMatrix;
+
+//more features might be added later on in this struct
+typedef struct Vship_DeviceInfo{
     char name[256];
-    //size in bytes
-    uint64_t VRAMSize;
-    //iGPU? (boolean)
-    int integrated;
+    uint64_t VRAMSize; //size in bytes
+    int integrated; //iGPU? (boolean)
     int MultiProcessorCount;
     int WarpSize;
-}
+    Vship_VulkanFeatureMatrix vulkanFeatureMatrix; //only set for Vulkan
+} Vship_DeviceInfo;
 ```
 
-You choose the GPU wiht gpu_id and device_info will possess the wanted informations.
+You choose the GPU wiht gpu_id and device_info will possess the wanted informations. You need to retrieve the backend with Vship_GetVersion() in order to know which information is available. For example, A lot of information are not available for Vulkan like VRAMSize.
 
 ### Vship_GPUFullCheck(int gpu_id)
 
@@ -233,9 +277,13 @@ free(errmsg2);
 
 This function works similarly to Vship_GetErrorMessage. But the error message that is returned contains more details. This function will hold onto the last error that happened in vship as a whole.This means that if a call has an error and another right after does not, this function will still return the error message of the error.
 
-### Vship_PinnedMalloc(void** ptr, uint64_t size)
+### int Vship_GetDetailedLastErrorHandler(void* handler, char* out_message, int len);
 
-This function allows a special and **expensive** type of allocation. The allocated data can be sent to the GPU with less latency and using less memory bandwidth by eliminating a memory copy. As such, for optimal speed, you should be using these planes for the images you plan on sending to the gpu for compute but only if you were to reuse the memory allocated because allocating and freeing for each frame with this function will occur slowdown.
+This function works similarly to Vship_GetDetailedLastError. But it only contains errors related to the handler. This is useful for multithreaded application where multiple errors might happen at the same time in different handlers.
+
+### Vship_PinnedMalloc2(void** ptr, uint64_t size, int gpu_id)
+
+This function allows a special and relatively expensive type of allocation. The allocated data can be sent to the GPU with less latency and using less memory bandwidth by eliminating a memory copy. As such, for optimal speed, you should be using these planes for the images you plan on sending to the gpu for compute but only if you were to reuse the memory allocated because allocating and freeing for each frame with this function will occur slowdown.
 
 ```Cpp
 uint8_t* mypointer;
@@ -243,7 +291,9 @@ VshipException err = Vship_PinnedMalloc(&mypointer, allocationsize);
 //now you can use mypointer. But don't forget to free using the next function! it cannot be freed with just free(mypointer);
 ```
 
-### Vship_PinnedFree(void* ptr)
+gpu_id is specified because vulkan requires it. However for HIP and Cuda it will not matter as long as the gpu_id is valid.
+
+### Vship_PinnedFree2(void* ptr, int gpu_id)
 
 This function is used to free the pinned memory allocated above.
 
@@ -254,6 +304,74 @@ mypointer[0] = 42;
 //yeay we wrote something
 Vship_PinnedFree(mypointer); //cleanup using this function
 ```
+
+gpu_id is specified because vulkan requires it. However for HIP and Cuda it will not matter as long as the gpu_id is valid.
+
+### Vship_Exception Vship_InitHandler(void** handler, void* argument);
+
+This function is made to be very general with arbitrary arguments. It allow to create handlers for all the metrics supported by Vship. argument corresponds to a struct used to initialize a handler. An example below
+
+```Cpp
+Vship_InitSSIMULACRA2_1 initStruct{
+    Vship_StructInitSSIMULACRA2_1, //the struct type enum allows vship to know which type of enum it is => deduce the metric
+    src_colorspace, //colorspace of source
+    dis_colorspace, //colorspace of encoded
+    gpu_id
+}
+
+void* ssimu2Handler;
+Vship_InitHandler(&ssimu2Handler, (void*)&initStruct);
+```
+
+There are 3 structs accept as of now, 1 for each metric: Vship_InitSSIMULACRA2_1, Vship_InitButteraugli_1, Vship_InitCVVDP_1. There corresponding struct enum values can be found in VshipAPI.h.
+
+### Vship_Exception Vship_FreeHandler(void* handler);
+
+After using a handler, we want to deallocate its memory to avoid memory leaks, this is the function for it.
+
+### Vship_Exception Vship_ComputeHandler(void* handler, void* score, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
+
+Using an allocated handler, you can retrieve the score between two `const uint8_t*[3]` frames who each have their own strides (bytes per line) per plane. The color conversion is done by vship with respect to the colorspace given at init to the handler.
+
+"score" here corresponds to one of the following structs: Vship_ScoreSSIMULACRA2, Vship_ScoreButteraugli, Vship_ScoreCVVDP. Note that the struct type will be checked and compared with the handler metric to ensure matching. As an example, I encourage to look at the interactive example. Some values of the struct can be read from, and some others will be written to.
+
+Beware that distortionMap stride is in Bytes and therefore you need to take into account the fact it's made of floats => stride >= width*sizeof(float)
+
+This function is blocking, and returns only when the score has been obtained.
+
+### Vship_Exception Vship_GetDistmapResolution(void* handler, int64_t* width, int64_t* height);
+
+Some metrics like Butteraugli and CVVDP allow retrieving a distortion map. While for butteraugli we know in advance the resolution of the distortion map, it is not the case for CVVDP due to display config and "resizeToDisplay". This function allows retrieving the size of the distortion map.
+
+Handler in, width and height out.
+
+### Vship_Exception Vship_Reset(void* handler);
+
+For temporal metrics with temporal buffer. As such it only accepts CVVDP handlers for now and will reset its temporal buffer.
+
+### Vship_Exception Vship_ResetScore(void* handler);
+
+For temporal metrics with internal score accumulation. As such it only accepts CVVDP handlers for now and will reset the score accumulation. This is useful for computed separate scene scores for example.
+
+### Vship_Exception Vship_LoadTemporalCVVDP2(void* handler, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
+
+This function allows to load an image into the temporal buffer of CVVDP without computing the metric and therefore without affecting the score accumulation.
+
+========================================
+Deprecation Area. The following are from the old API and only currently available for backward compatibilty via an internal translation layer.
+========================================
+
+### Vship_SetDevice(int gpu_id)
+
+This function allows to choose the detected GPU to run vship on. If the gpu_id chosen is not valid, an exception is returned. You can have information to choose the GPU you wish to use using the following function. But in general, GPU 0 is the most relevant GPU to use.
+
+### Vship_PinnedMalloc(void** ptr, uint64_t size)
+
+Vship_PinnedMalloc2 but uses the GPU that was set by Vship_SetDevice before (or 0 by default)
+
+### Vship_PinnedFree(void* ptr)
+
+Vship_PinnedFree2 but uses the GPU that was set by Vship_SetDevice before (or 0 by default)
 
 ### Vship_SSIMU2Init(Vship_SSIMU2Handler* handler, Vship_Colorspace_t src_colorspace, Vship_Colorspace_t dis_colorspace)
 

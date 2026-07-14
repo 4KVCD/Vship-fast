@@ -10,8 +10,8 @@ Compiling FFVship on windows has been relatively complex due to lib placement no
 
 - Copy these files and dump them in vship folder
 
-- build libvship using `make build` (amd) `make buildcuda` (nvidia) or `make buildVulkan` (vulkan)
+- build libvship using `make build BACKEND=<your backend>` (follow the readme)
 
-- build FFVship using `make buildFFVship`
+- build FFVship using `make buildFFVSHIP`
 
 The following binary is going to need to be used next to libvship.dll and ffms2.dll (can be found either in the ffms2 repository or stolen from a pre-compiled FFVship release).

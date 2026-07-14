@@ -100,9 +100,10 @@ Then FFVship will resize the encoded to 1910x1080 then crop to 1900x1080, while 
 
 -t corresponds to the number of decoding process used. It is recommended to increase this value to -t 2 or -t 3 if your CPU has too much cores for the decoding process to fully use it (if it not already saturating your GPU). -g correponds to the number of stream in the GPU, -g 3 is usually considered enough, it can be lowered to reduce VRAM or increased a bit to help the GPU parallelize frames better if it fails to being fully used.
 
-### --gpu-id / --list-gpu
+### --gpu-id / --list-gpu / --gpu-info
 
---gpu-id allows to choose a GPU on the system if it has multiple GPUs. A list of GPUs detected on the system and their corresponding IDs can be obtained by running `FFVship --list-gpu`
+--gpu-id allows to choose a GPU on the system if it has multiple GPUs. A list of GPUs detected on the system and their corresponding IDs can be obtained by running `FFVship --list-gpu`.
+--gpu-infos allows to retrieve some valuable informations about the GPU selected. The given info depends on the backend of Vship. Vulkan for example will give the vulkan capabilities that are relevant for vship. That may be used to understand why vship does not work on your hardware though that is unlikely.
 
 ### --source-index / --encoded-index / --cache-index
 
@@ -152,3 +153,14 @@ This method is made to be able to retrieve per-frame scores from the computation
 
 (the last cvvdp score is the cvvdp score of the whole clip)
 ```
+
+### --svg
+
+Another different method to output scores. The path taken as an argument will hold a .svg image file containing a graph of the metric for each frame.
+
+For CVVDP, a numerically unstable algorithm is used to reverse the temporal score pooling and retrieve a per frame score.
+--svg may be used alongside normal output (or --live-score-output) or even --json without issue.
+
+An example of such graph can be seen here:
+
+![GraphExample](../examples/graphOutputExample.svg)

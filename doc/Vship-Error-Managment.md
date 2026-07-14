@@ -10,7 +10,10 @@ Due to the Vapoursynth plugin nature of Vship, only Vapoursynth.Error can be sen
 VshipException
 {Error Enum Name}: {message related to error type}
  - At line {line} of {file}
+Detail: {Details}
 ```
+
+The "Detail" line may not be there if there are no specific details to be displayed
 
 # Error types:
 
@@ -18,25 +21,46 @@ VshipException
 
 ### OutOfVRAM: 
 
-This issue shows that a VRAM allocation (hipMalloc) failed which indicates that your VRAM is full. The common way around it is lowering `vapoursynth.core.num_threads` corresponding to the VRAM requirements described in vship.BUTTERAUGLI and vship.SSIMULACRA2
+This issue shows that a VRAM allocation failed which indicates that your VRAM is full. The common way around it is lowering `vapoursynth.core.num_threads` corresponding to the VRAM requirements described in vship.BUTTERAUGLI and vship.SSIMULACRA2.
 
-The VRAM amount of a gpu can be obtained in advance running vship.GpuInfo(gpu_id=?)
+On vship C api you may want to lower number of concurrent handlers, for FFVship lower -g
 
 ### OutOfRAM:
 
 This issue should never happen or is super rare and happens if a RAM allocation (malloc) fails. This likely means that your RAM. And as with VRAM, lowering `vapoursynth.core.num_threads` can help reducing RAM allocation.
 
+### HIPError
+
+This error means that HIP or Cuda returned an error without much details. When this is raised, the "Detail" line contains the information about it that is given directly by HIP/Cuda.
+
 ## Input Errors
+
+### BadDisplayModel:
+
+This happens when CVVDP failed to parse your display model. There are multiple reasons that may show in details.
+Default display models are shown in [CVVDP doc](CVVDP.md)
 
 ### DifferingInputType:
 
-This issue arise when the 2 clips given in vship.BUTTERAUGLI or vship.SSIMULACRA2 are different. Colorspace conversion is done automatically, but vship does nothing if they don't share the same width, height and frame count.
+This issue arise when the 2 clips given are different sizes. Colorspace conversion is done automatically, but vship does nothing if they don't share the same width, height and frame count.
+
+FFVship however will convert automatically the width and height to the source, and will take frame count = min of both
+Handler from vship C api expect both colorspaces to have the same width/height, taking into account target_width target_height and cropping
 
 ### NonRGBSInput:
 
 This issue should never happen, ever. (Since vship is handling the conversion to RGBS)
 
 If you manage to get it, congrats! You can come speak to me haha (not that you cannot otherwise)
+
+### BadPath
+
+BadPath happens when vship has an argument that requires searching for a file and the file fails to open mostly because it may not be there. It may also be lacking permissions to read the file.
+For now this applies to CVVDP display config files.
+
+### BadJson
+
+Json parsing may fail for multiple reasons, you need to look at the Detail part
 
 ## Device errors
 
@@ -59,7 +83,7 @@ This happens when you specify a gpu_id argument that is incorrect (either < 0 or
 
 ### BadDeviceCode:
 
-This happens when vship manages to get all the infos about your gpu but is unable to execute any code on it. This usually shows that vship was not compiled for your GPU's architecture.
+This happens when vship manages to get all the infos about your gpu but is unable to execute any code on it. This usually shows that vship HIP/Cuda was not compiled for your GPU's architecture.
 
 ## Other error type
 

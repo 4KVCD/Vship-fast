@@ -16,8 +16,8 @@ ID | `com.lumen.vship`
 
 ## [VshipAPI](VshipAPI.md)
 
-* [Example1 (API test)](../test/apitest.c)
-* [Example2 (Monothreaded Benchmark)](../test/apibenchmark.cpp)
+* [Example1 (API test)](../examples/vshipAPIExample.cpp)
+* [Example2 (Benchmark)](../test/speedtest.cpp)
 
 ## Metrics
 

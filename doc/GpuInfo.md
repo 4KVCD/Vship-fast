@@ -1,4 +1,4 @@
-GpuInfo possess 2 different behaviours depending or the supplied arguments.
+GpuInfo possess 2 different behaviours depending or the supplied arguments. For FFVship users, the pseudo-equivalent is --gpu-infos (combined with --gpu-id)
 
 ### The related code is in [gpuhelper.hpp](../src/util/gpuhelper.hpp)
 
@@ -27,7 +27,7 @@ Note that by default, HIP and CUDA will use GPU 0
 
 In that case, vship understands that you want more details about the GPU specified. The same as before, beware to manage [Errors](https://codeberg.org/Line-fr/Vship/wiki/Vship-Error-Managment). This function can return 3 error types : `DeviceCountError`, `NoDeviceDetected` and `BadDeviceArgument`
 
-Here is the return format and all the infos that vship will give : 
+The amount of info that vship will give depends with the backend of vship. However some are always available like the name, if the gpu is integrated or if it passes kernel check
 
 ```
 Name: {GPU Name string}
@@ -39,4 +39,4 @@ MemoryBusWidth: {memory bus width integer} bits
 Integrated: {0|1}
 PassKernelCheck : {0|1}
 ```
-PassKernelCheck is special because it is not given by HIP or CUDA, it corresponds to a Sanity Check and gives clues showing that vship **will** fail if it gives 0 and the given gpu is used to compute. The corresponding error that would arise if unmanaged at that step is `BadDeviceCode`
+PassKernelCheck is special, it corresponds to a Sanity Check and gives clues showing that vship **will** fail if it gives 0 and the given gpu is used to compute. The corresponding error that would arise if unmanaged at that step is `BadDeviceCode`.
