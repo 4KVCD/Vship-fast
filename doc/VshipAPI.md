@@ -97,7 +97,7 @@ colorspace.primaries = Vship_PRIMARIES_BT709;
 Vship being made for maximal throughput, it does some preprocessing. A handler may be used for processing a lot of frames (but only one at a time). To create a handler, we first define a wrapper function to make life easier
 
 ```Cpp
-void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, float intensity_multiplier, int Qnorm){
+Vship_Handle getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, float intensity_multiplier, int Qnorm){
     Vship_InitButteraugli_1 initStruct = {
         Vship_StructInitButteraugli_1,
         src, dst,
@@ -105,7 +105,7 @@ void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, floa
         intensity_multiplier,
         0 //gpu_id
     };
-    void* handler;
+    Vship_Handle handler;
     ErrorCheck(Vship_InitHandler(&handler, (void*)&initStruct));
     return handler;
 }
@@ -114,7 +114,7 @@ void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, floa
 then we can use it in our code
 
 ```Cpp
-void* butterhandler = getButteraugliHandler(colorspace, colorspace, 203.f, 5);
+Vship_Handle butterhandler = getButteraugliHandler(colorspace, colorspace, 203.f, 5);
 ```
 
 ### Frame Processing

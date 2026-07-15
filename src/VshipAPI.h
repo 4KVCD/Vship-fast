@@ -118,6 +118,8 @@ EXPORTPREPROCESS int Vship_GetDetailedLastError(char* out_message, int len);
 EXPORTPREPROCESS Vship_Exception Vship_PinnedMalloc2(void** ptr, uint64_t size, int gpu_id);
 EXPORTPREPROCESS Vship_Exception Vship_PinnedFree2(void* ptr, int gpu_id);
 
+typedef void* Vship_Handle;
+
 typedef enum{
     Vship_StructNull = 0,
     Vship_StructInitSSIMULACRA2_1 = 1,
@@ -157,13 +159,13 @@ typedef struct Vship_InitCVVDP_1{
 
 //this function allows to create a handler for any metric using argument with
 //handler pointer is returned as first argument, you must not modify its content
-EXPORTPREPROCESS Vship_Exception Vship_InitHandler(void** handler, void* argument);
+EXPORTPREPROCESS Vship_Exception Vship_InitHandler(Vship_Handle* handler, void* argument);
 
-EXPORTPREPROCESS Vship_Exception Vship_FreeHandler(void* handler);
+EXPORTPREPROCESS Vship_Exception Vship_FreeHandler(Vship_Handle handler);
 
 //works exactly like Vship_GetDetailedLastError but returns the last error of a handler instead of being global which is better in multithreaded scenarios
 //if it returns 0, it means an error occurent inside, you should use Vship_GetDetailedLastError
-EXPORTPREPROCESS int Vship_GetDetailedLastErrorHandler(void* handler, char* out_message, int len);
+EXPORTPREPROCESS int Vship_GetDetailedLastErrorHandler(Vship_Handle handler, char* out_message, int len);
 
 typedef struct Vship_ScoreSSIMULACRA2{
     Vship_StructType structType; //should be Vship_StructScoreSSIMULACRA2
@@ -191,19 +193,19 @@ typedef struct Vship_ScoreCVVDP{
 } Vship_ScoreCVVDP;
 
 //score should be a struct like specified before depending on the metric
-EXPORTPREPROCESS Vship_Exception Vship_ComputeHandler(void* handler, void* score, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
+EXPORTPREPROCESS Vship_Exception Vship_ComputeHandler(Vship_Handle handler, void* score, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
 
 //in order to retrieve the distortion map, you might want to know its resolution (it varies depending on parameters)
-EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(void* handler, int64_t* width, int64_t* height);
+EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(Vship_Handle handler, int64_t* width, int64_t* height);
 
 //this function empties temporal filter history of temporal metrics (but not score accumulation, see below)
-EXPORTPREPROCESS Vship_Exception Vship_Reset(void* handler);
+EXPORTPREPROCESS Vship_Exception Vship_Reset(Vship_Handle handler);
 
 //This function is to not empty the temporal filter history but the score accumulation (useful to get per scene scores)
-EXPORTPREPROCESS Vship_Exception Vship_ResetScore(void* handler);
+EXPORTPREPROCESS Vship_Exception Vship_ResetScore(Vship_Handle handler);
 
 //This function allows loading frames to the temporal filter to represent past frames without impacting the score for CVVDP
-EXPORTPREPROCESS Vship_Exception Vship_LoadTemporalCVVDP2(void* handler, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
+EXPORTPREPROCESS Vship_Exception Vship_LoadTemporalCVVDP2(Vship_Handle handler, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]);
 
 //------------------------------------------------------------------
 //DEPRECATION WARNING: everything after this mark only constitutes backward compatibility

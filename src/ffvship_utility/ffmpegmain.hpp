@@ -73,7 +73,7 @@ class GpuWorker {
     int64_t lineSize2[3];
 
     MetricType selected_metric;
-    void* handler;
+    Vship_Handle handler;
 
   public:
     GpuWorker(MetricType metric, Vship_Colorspace_t source_colorspace, Vship_Colorspace_t encoded_colorspace, const int64_t lineSize[3], const int64_t lineSize2[3], float fps, MetricParameters metricParam){

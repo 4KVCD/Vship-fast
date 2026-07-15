@@ -50,7 +50,7 @@ public:
     }
 };
 
-void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, float intensity_multiplier, int Qnorm){
+Vship_Handle getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, float intensity_multiplier, int Qnorm){
     Vship_InitButteraugli_1 initStruct = {
         Vship_StructInitButteraugli_1,
         src, dst,
@@ -58,7 +58,7 @@ void* getButteraugliHandler(Vship_Colorspace_t src, Vship_Colorspace_t dst, floa
         intensity_multiplier,
         0 //gpu_id
     };
-    void* handler;
+    Vship_Handle handler;
     ErrorCheck(Vship_InitHandler(&handler, (void*)&initStruct));
     return handler;
 }
@@ -84,7 +84,7 @@ int main(){
     colorspace.transferFunction = Vship_TRC_BT709;
     colorspace.primaries = Vship_PRIMARIES_BT709;
 
-    void* butterhandler = getButteraugliHandler(colorspace, colorspace, 203.f, 5);
+    Vship_Handle butterhandler = getButteraugliHandler(colorspace, colorspace, 203.f, 5);
 
     Image im1(image_width, image_height);
     Image im2(image_width, image_height);

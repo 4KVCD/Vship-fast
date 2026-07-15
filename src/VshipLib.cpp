@@ -141,7 +141,7 @@ Vship_Exception Vship_PinnedFree2(void* ptr, int gpu_id){
     return Vship_NoError;
 }
 
-Vship_Exception Vship_InitHandler(void** handlerOut, void* argument){
+Vship_Exception Vship_InitHandler(Vship_Handle* handlerOut, void* argument){
     Vship_Exception err = Vship_NoError;
 
     //what type of handler do we want?
@@ -198,7 +198,7 @@ Vship_Exception Vship_InitHandler(void** handlerOut, void* argument){
     return err;
 }
 
-Vship_Exception Vship_FreeHandler(void* handler){
+Vship_Exception Vship_FreeHandler(Vship_Handle handler){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 
@@ -233,7 +233,7 @@ Vship_Exception Vship_FreeHandler(void* handler){
     return err;
 }
 
-int Vship_GetDetailedLastErrorHandler(void* handler, char* out_message, int len){
+int Vship_GetDetailedLastErrorHandler(Vship_Handle handler, char* out_message, int len){
     auto* handlerdata = (HandlerData*)handler;
     std::string cppstr = handlerdata->lastError.getErrorMessage();
     if (len == 0) return cppstr.size()+1; //required size to fit the whole message
@@ -243,7 +243,7 @@ int Vship_GetDetailedLastErrorHandler(void* handler, char* out_message, int len)
     return cppstr.size()+1;
 }
 
-EXPORTPREPROCESS Vship_Exception Vship_ComputeHandler(void* handler, void* scoreStruct, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
+EXPORTPREPROCESS Vship_Exception Vship_ComputeHandler(Vship_Handle handler, void* scoreStruct, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
     Vship_StructType scoreStructType = *(Vship_StructType*)scoreStruct;
@@ -289,7 +289,7 @@ EXPORTPREPROCESS Vship_Exception Vship_ComputeHandler(void* handler, void* score
     return err;
 }
 
-EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(void* handler, int64_t* width, int64_t* height){
+EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(Vship_Handle handler, int64_t* width, int64_t* height){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 
@@ -316,7 +316,7 @@ EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(void* handler, int64
     return err;
 }
 
-EXPORTPREPROCESS Vship_Exception Vship_Reset(void* handler){
+EXPORTPREPROCESS Vship_Exception Vship_Reset(Vship_Handle handler){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 
@@ -339,7 +339,7 @@ EXPORTPREPROCESS Vship_Exception Vship_Reset(void* handler){
     return err;
 }
 
-EXPORTPREPROCESS Vship_Exception Vship_ResetScore(void* handler){
+EXPORTPREPROCESS Vship_Exception Vship_ResetScore(Vship_Handle handler){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 
@@ -363,7 +363,7 @@ EXPORTPREPROCESS Vship_Exception Vship_ResetScore(void* handler){
 }
 
 //This function allows loading frames to the temporal filter to represent past frames without impacting the score for CVVDP
-EXPORTPREPROCESS Vship_Exception Vship_LoadTemporalCVVDP2(void* handler, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
+EXPORTPREPROCESS Vship_Exception Vship_LoadTemporalCVVDP2(Vship_Handle handler, const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 
