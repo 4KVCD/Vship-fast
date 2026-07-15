@@ -1,9 +1,11 @@
 import vapoursynth as vs
 core = vs.core
+#To print score, you need to use Python and not vspipe
+#To output distmap, you need to remove prints, use vspipe and not python
 
 # Load reference and distorted clips
-ref = core.bs.VideoSource("reference.mp4")
-dist = core.bs.VideoSource("distorted.mp4")
+ref = core.bs.VideoSource("../VshipUsageScript/sample.y4m")
+dist = core.bs.VideoSource("../VshipUsageScript/testscores.mkv")
 
 #==================SSIMULACRA2=====================
 
@@ -11,10 +13,10 @@ dist = core.bs.VideoSource("distorted.mp4")
 ssimu2Clip = ref.vship.SSIMULACRA2(dist, numStream = 4)
 
 # Extract scores from frame properties
-SSIMU2scores = [frame.props["_SSIMULACRA2"] for frame in ssimu2Clip.frames()]
+ssimu2Scores = [frame.props["_SSIMULACRA2"] for frame in ssimu2Clip.frames()]
 
 # Print average score
-print(f"Average SSIMULACRA2 score: {sum(scores) / len(scores)}")
+print(f"Average SSIMULACRA2 score: {sum(ssimu2Scores) / len(ssimu2Scores)}")
 
 #==================Butteraugli=====================
 
@@ -24,10 +26,7 @@ print(f"Average SSIMULACRA2 score: {sum(scores) / len(scores)}")
 # qnorm controls which Norm to calculate and return in _BUTTERAUGLI_QNorm
 butterClip = ref.vship.BUTTERAUGLI(dist, distmap = 0, numStream = 4, qnorm = 5)
 
-all_scores_Butteraugli = [frame.props["_BUTTERAUGLI_3Norm"],
-               frame.props["_BUTTERAUGLI_INFNorm"],
-               frame.props["_BUTTERAUGLI_QNorm"]]
-              for frame in result.frames()]
+butterScores = [[frame.props["_BUTTERAUGLI_3Norm"], frame.props["_BUTTERAUGLI_INFNorm"], frame.props["_BUTTERAUGLI_QNorm"]] for frame in butterClip.frames()]
 
 # Output grayscale visualation of distortion for visual analysis for example with vs-preview
 ref.vship.BUTTERAUGLI(dist, distmap = 1, numStream = 4).set_output()
@@ -39,7 +38,7 @@ ref.vship.BUTTERAUGLI(dist, distmap = 1, numStream = 4).set_output()
 # distmap controls whether to return a visual distortion map or the reference clip
 # model_name controls which Display Model to use
 # resizeToDisplay conrols whether or not to resize the reference and distorted inputs to the Display Model resolution
-CVVDPClip = ref.vship.CVVDP(dist, distmap = 0, model_name = "standard_fhd", resizeToDisplay = 0)
+cvvdpClip = ref.vship.CVVDP(dist, distmap = 0, model_name = "standard_fhd", resizeToDisplay = 0)
 
 # Extract scores from frame properties
 
@@ -47,13 +46,13 @@ CVVDPClip = ref.vship.CVVDP(dist, distmap = 0, model_name = "standard_fhd", resi
 #scores = [frame.props["_CVVDP"] for frame in result.frames()]
 
 #correct is:
-scores = []
-for i in range(len(result)):
-  scores.append(result.get_frame(i).props["_CVVDP"])
+cvvdpScores = []
+for i in range(len(cvvdpClip)):
+  cvvdpScores.append(cvvdpClip.get_frame(i).props["_CVVDP"])
 
 # Only use the last score of CVVDP. (it takes into account every frame that it has seen up to now)
 #it is different because it is an actually temporal metric unlike others
-print(f"CVVDP Video Score: {scores[-1]}")
+print(f"CVVDP Video Score: {cvvdpScores[-1]}")
 
 
 # Output grayscale visualation of distortion for visual analysis

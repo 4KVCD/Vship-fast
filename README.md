@@ -68,6 +68,8 @@ Additionally, to build the FFvship cli tool:
 
 ### Build Instructions
 
+Windows users wishing to compile FFVship by themselves may first refer to [this](doc/FFVship-Windows-Compilation.md)
+
 1. Use the appropriate target for your gpu or use case.
 
 ```bash
@@ -118,9 +120,11 @@ usage: ./FFVship [-h] [--source SOURCE] [--encoded ENCODED]
                     [--list-gpu]
 ```
 
+more details may be found in the [doc](doc/FFVship.md)
+
 ### Vapoursynth
 
-You can check examples of scripts [here](examples/vapoursynthExample.py)
+You can check examples of scripts [here](examples/vapoursynthExample.py) or the doc here [this](doc/Home.md)
 
 ### Vship C API
 
