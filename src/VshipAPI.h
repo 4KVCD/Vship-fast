@@ -24,6 +24,7 @@ typedef enum{
     Vship_HIP = 0,
     Vship_Cuda = 1,
     Vship_Vulkan = 2,
+    Vship_CPU = 3,
 } Vship_Backend;
 
 typedef struct {

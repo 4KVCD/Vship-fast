@@ -231,6 +231,8 @@ int main(int argc, char **argv) {
             std::cout << "Vulkan version" << std::endl;
         } else if (vshipVersion.backend == Vship_HIP){
             std::cout << "HIP version" << std::endl;
+        } else if (vshipVersion.backend == Vship_CPU){
+            std::cout << "CPU version" << std::endl;
         } else {
             std::cout << "Unknown version" << std::endl;
         }
