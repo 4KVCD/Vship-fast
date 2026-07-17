@@ -148,7 +148,7 @@ void aggregate_scores_function(score_queue_t& input_score_queue,
             aggregated_scores[frame_index * 3] = std::get<0>(scores_tuple);
             aggregated_scores[frame_index * 3 + 1] = std::get<1>(scores_tuple);
             aggregated_scores[frame_index * 3 + 2] = std::get<2>(scores_tuple);
-            if (progressBar) progressBar->add_value(std::get<2>(scores_tuple));
+            if (progressBar) progressBar->add_value(std::get<0>(scores_tuple));
             if (livePrint) std::cout << frame_index << " " << std::get<0>(scores_tuple) << " " << std::get<1>(scores_tuple) << " " << std::get<2>(scores_tuple) << std::endl;
         }
     }
