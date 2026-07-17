@@ -164,8 +164,8 @@ namespace butter{
 
             if (i == 2){
                 //mf = blur(xyb-lf)
-                subarray(src[i], lf[i], mf[i], width*height, stream);
-                blur(mf[i], temp[i], width, height, gaussianHandle, 3, stream);
+                subarray(src[i], lf[i], temp[0], width*height, stream);
+                blur(mf[i], temp[0], temp[1], width, height, gaussianHandle, 3, stream);
                 break;
             }
             //mf (hf (uhf)) = xyb-lf //mf is stored on hf which is stored in uhf
@@ -189,7 +189,7 @@ namespace butter{
         for (int i = 0; i < 2; i++){
             //original does uhf = hf but hf is already in uhf.
             //next is hf = blur(hf (uhf)) -> hf is now at its place and uhf has the old hf copy
-            blurDstNoTemp(hf[i], uhf[i], width, height, gaussianHandle, 1, stream);
+            blur(hf[i], uhf[i], temp[i], width, height, gaussianHandle, 1, stream);
 
             if (i == 0){
                 subarray_removerangearound0(hf[i], uhf[i], width*height, 1.5f, stream);

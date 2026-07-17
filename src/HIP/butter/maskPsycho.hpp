@@ -110,7 +110,7 @@ void fuzzyerrosion(float* src, float* dst, int64_t width, int64_t height, hipStr
     GPU_CHECK(hipGetLastError());
 }
 
-void MaskPsychoImage(float* hf1[3], float* uhf1[3], float* hf2[3], float* uhf2[3], float* mask_xyb0, float* mask_xyb1, float* mask, float* block_diff_ac[3], int64_t width, int64_t height, GaussianHandle& gaussianHandle, hipStream_t stream) {
+void MaskPsychoImage(float* hf1[3], float* uhf1[3], float* hf2[3], float* uhf2[3], float* mask_xyb0, float* mask_xyb1, float* mask, float* block_diff_ac[3], float* temp1, float* temp2, int64_t width, int64_t height, GaussianHandle& gaussianHandle, hipStream_t stream) {
     const float muls[3] = {
       2.5f,
       0.4f,
@@ -128,8 +128,8 @@ void MaskPsychoImage(float* hf1[3], float* uhf1[3], float* hf2[3], float* uhf2[3
     diffPrecompute(mask_xyb1, diff1, width, height, 6.19424080439f, 12.61050594197f, stream);
     float* blurred0 = mask_xyb0;
     float* blurred1 = mask_xyb1;
-    blurDstNoTemp(blurred0, diff0, width, height, gaussianHandle, 2, stream);
-    blurDstNoTemp(blurred1, diff1, width, height, gaussianHandle, 2, stream);
+    blur(blurred0, diff0, temp1, width, height, gaussianHandle, 2, stream);
+    blur(blurred1, diff1, temp2, width, height, gaussianHandle, 2, stream);
     fuzzyerrosion(blurred0, mask, width, height, stream);
     L2diff(blurred0, blurred1, block_diff_ac[1], width*height, 10.0f, stream);
 }

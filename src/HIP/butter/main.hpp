@@ -35,9 +35,9 @@ float* getdiffmap(float* src1_d[3], float* src2_d[3], float* mem_d, int64_t widt
     float* hf2[3] = {mem_d+19*width*height, mem_d+20*width*height};
     float* uhf2[3] = {mem_d+21*width*height, mem_d+22*width*height};
 
-    //to XYB
-    opsinDynamicsImage(src1_d, temp, width, height, gaussianHandle, intensity_multiplier, stream);
-    opsinDynamicsImage(src2_d, temp, width, height, gaussianHandle, intensity_multiplier, stream);
+    //to XYB, lf is just a temporary plane for gaussian blur here
+    opsinDynamicsImage(src1_d, temp, lf1, width, height, gaussianHandle, intensity_multiplier, stream);
+    opsinDynamicsImage(src2_d, temp, lf2, width, height, gaussianHandle, intensity_multiplier, stream);
 
     separateFrequencies(src1_d, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle, stream);
     separateFrequencies(src2_d, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle, stream);
@@ -97,7 +97,7 @@ float* getdiffmap(float* src1_d[3], float* src2_d[3], float* mem_d, int64_t widt
     float* temp3[3] = {lf2[0], lf2[1], lf2[2]};
     float* temp4[3] = {mf2[0], mf2[1], mf2[2]};
 
-    MaskPsychoImage(hf1, uhf1, hf2, uhf2, temp3[0], temp4[0], mask, block_diff_ac, width, height, gaussianHandle, stream);
+    MaskPsychoImage(hf1, uhf1, hf2, uhf2, temp3[0], temp4[0], mask, block_diff_ac, temp3[1], temp4[1], width, height, gaussianHandle, stream);
     //at this point hf and uhf cannot be used anymore (they have been invalidated by the function)
 
     float* diffmap_ = temp[0];

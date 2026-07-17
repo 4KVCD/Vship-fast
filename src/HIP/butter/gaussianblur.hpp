@@ -29,10 +29,11 @@ public:
         }
         indices[0] = 0;
         const double sigmas[5] = {1.2, 1.56416327805, 2.7, 3.22489901262, 7.15593339443};
+        const int windowsizes[5] = {3, 4, 8, 8, 18};
 
         for (int i = 0; i < 5; i++){
             const double sigma = sigmas[i];
-            const int windowsize = std::max((int)(sigma*3), (int)8); //we use 8 to trigger the special gaussian blur when possible
+            const int windowsize = windowsizes[i];
             indices[i+1] = indices[i]+4*windowsize+3;
             const int th_x = std::min(windowsize*2+1, 256);
             const int bl_x = (windowsize*2)/th_x+1;
@@ -185,7 +186,7 @@ __global__ void TiledGaussianBlur_Kernel(float* src, float* dst, int64_t width, 
         }
     }
 }
-
+/*
 void blur(float* mem_d, float* temp, int64_t width, int64_t height, GaussianHandle& gaussianHandle, int i, hipStream_t stream){
     const int gaussiansize = gaussianHandle.getWindow(i);
     float* gaussianKernel = gaussianHandle.get(i);
@@ -204,7 +205,7 @@ void blur(float* mem_d, float* temp, int64_t width, int64_t height, GaussianHand
     GPU_CHECK(hipGetLastError());
     verticalBlur_Kernel<<<dim3(verticalbl_x, verticalbl_y), dim3(verticalth_x, verticalth_y), 0, stream>>>(mem_d, temp, width, height, gaussianKernel, gaussianKernel_integral, gaussiansize);
     GPU_CHECK(hipGetLastError());
-}
+}*/
 
 void blur(float* dst, float* mem_d, float* temp, int64_t width, int64_t height, GaussianHandle& gaussianHandle, int i, hipStream_t stream){
     const int gaussiansize = gaussianHandle.getWindow(i);
@@ -234,6 +235,7 @@ void blur(float* dst, float* mem_d, float* temp, int64_t width, int64_t height, 
         GPU_CHECK(hipGetLastError());
     }
 }
+/*
 void blurDstNoTemp(float* dst, float* mem_d, int64_t width, int64_t height, GaussianHandle& gaussianHandle, int i, hipStream_t stream){
     const int gaussiansize = gaussianHandle.getWindow(i);
     float* gaussianKernel = gaussianHandle.get(i);
@@ -248,7 +250,7 @@ void blurDstNoTemp(float* dst, float* mem_d, int64_t width, int64_t height, Gaus
     TiledGaussianBlur_Kernel<<<dim3(bl_x*bl_y), dim3(th_x, th_y), 0, stream>>>(mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral);
     GPU_CHECK(hipGetLastError());
 }
-
+*/
 //all gaussian sigmas:
 /*
 1.2
