@@ -84,7 +84,6 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
         h = (h+1)/2;
     }
 
-    std::vector<float> scores(levels*4); //per_band and per channel
     int tempOffset = 0;
     VkDeviceAddress temp = LPyr1.getLbkg(0); //we take all the space! so we use band0
     for (int band = 0; band < levels; band++){

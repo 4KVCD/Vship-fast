@@ -185,9 +185,7 @@ public:
         //then we have nothing else to do that wait
         fence->synchronize();
         //output should be in outputCPU
-        std::vector<float> data(outputCPU, outputCPU+108);
-
-        double res = final_score(data);
+        double res = final_score(outputCPU);
         
         return res;
     }
