@@ -226,7 +226,7 @@ void placeAllscore_map(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff,
     deviceHelper->device.memCpyDtoH(cmdBuff, res, outbuffer_d, sizeof(float)*108);
 }
 
-float final_score(std::vector<float>& scores){
+float final_score(float* scores){
 
     for (int scale = 0; scale < 6; scale++){
         for (int plane = 0; plane < 3; plane++){
