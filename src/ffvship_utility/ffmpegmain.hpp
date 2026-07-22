@@ -404,7 +404,7 @@ class FFMSFrameReader {
                              int track_index) {
 
         if (file_path.substr(file_path.size()-4) == ".jpg" || file_path.substr(file_path.size()-5) == ".jpeg"){
-            std::cout << "jpg detected, seek mode workaround for ffms2 enabled" << std::endl;
+            //std::cerr << "jpg detected, seek mode workaround for ffms2 enabled" << std::endl;
             seek_mode = FFMS_SEEK_LINEAR;
         }
 
