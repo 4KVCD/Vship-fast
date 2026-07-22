@@ -10,8 +10,8 @@ __device__ float3 inline ncl_yuv_to_rgb_from_kr_kb(float3 val, const float Kr, c
     const float vscale = 0.5f/(1.f-Kr);
 
     float3 res;
-    res.x = (val.z + val.x * vscale)/(vscale*Kr + 0.5f);
-    res.z = (val.y + val.x * uscale)/(uscale*Kb + 0.5f);
+    res.x = val.x + (val.z)/vscale;
+    res.z = val.x + (val.y)/uscale;
     res.y = (val.x - Kr*res.x - Kb*res.z)/Kg;
 
     return res;
@@ -208,10 +208,10 @@ __global__ void YUVToLinRGBPipeline_Kernel(float* p0, float* p1, float* p2, int6
     float3 val = {p0[x], p1[x], p2[x]};
 
     val = YUVToLinRGBPipeline_Device<matrix, transfer>(val);
-    //if (x == 0) {
-    //    float3 tmp = gammaLightYUVConversion<matrix>(float3({p0[x], p1[x], p2[x]}));
-    //    printf("at x=%lld, before YUVtoLinRGB: %f %f %f, middle %f %f %f, after: %f %f %f\n", x, p0[x], p1[x], p2[x], tmp.x, tmp.y, tmp.z, val.x, val.y, val.z);
-    //}
+    /*if (x == 500500) {
+        float3 tmp = gammaLightYUVConversion<matrix>(float3({p0[x], p1[x], p2[x]}));
+        printf("at x=%lld, before YUVtoLinRGB: %f %f %f, middle %f %f %f, after: %f %f %f\n", x, p0[x], p1[x], p2[x], tmp.x, tmp.y, tmp.z, val.x, val.y, val.z);
+    }*/
 
     p0[x] = val.x;
     p1[x] = val.y;
