@@ -197,7 +197,6 @@ int ffmpegToVshipFormat(Vship_Colorspace_t& out, const FFMS_Frame* in){
             out.transferFunction = Vship_TRC_sRGB;
             out.primaries = Vship_PRIMARIES_BT709;
             out.range = Vship_RangeFull;
-            out.sample = Vship_SampleUINT8;
             out.subsampling.subw = 0;
             out.subsampling.subh = 0;
         break;
