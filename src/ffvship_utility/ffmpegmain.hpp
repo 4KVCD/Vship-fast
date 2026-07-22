@@ -403,6 +403,11 @@ class FFMSFrameReader {
     void create_video_source(const std::string &file_path, FFMS_Index *index,
                              int track_index) {
 
+        if (file_path.substr(file_path.size()-4) == ".jpg" || file_path.substr(file_path.size()-5) == ".jpeg"){
+            std::cout << "jpg detected, seek mode workaround for ffms2 enabled" << std::endl;
+            seek_mode = FFMS_SEEK_LINEAR;
+        }
+
         video_source =
             FFMS_CreateVideoSource(file_path.c_str(), track_index, index,
                                    num_decoder_threads, seek_mode, &error_info);
