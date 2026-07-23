@@ -54,29 +54,17 @@ float* getdiffmap(float* src1_d[3], float* src2_d[3], float* mem_d, int64_t widt
 
     const float hf_asymmetry_ = 0.8f;
 
-    const float wUhfMalta = 1.10039032555f;
-    const float norm1Uhf = 71.7800275169f;
-    MaltaDiffMap(uhf1[1], uhf2[1], block_diff_ac[1], width, height, wUhfMalta * hf_asymmetry_, wUhfMalta / hf_asymmetry_, norm1Uhf, stream);
+    const float2 wUhfMalta_X = {173.5f, 1.10039032555f};
+    const float2 norm1Uhf_X = {5.0f, 71.7800275169f};
+    MaltaDiffMap(uhf1[0], uhf2[0], uhf1[1], uhf2[1], block_diff_ac[0], block_diff_ac[1], width, height, wUhfMalta_X * hf_asymmetry_, wUhfMalta_X / hf_asymmetry_, norm1Uhf_X, stream);
 
-    const float wUhfMaltaX = 173.5f;
-    const float norm1UhfX = 5.0f;
-    MaltaDiffMap(uhf1[0], uhf2[0], block_diff_ac[0], width, height, wUhfMaltaX * hf_asymmetry_, wUhfMaltaX / hf_asymmetry_, norm1UhfX, stream);
+    const float2 wHfMalta_X = {6923.99476109f, 18.7237414387f};
+    const float2 norm1Hf_X = {8051.15833247f, 4498534.45232f};
+    MaltaDiffMapLF(hf1[0], hf2[0], hf1[1], hf2[1], block_diff_ac[0], block_diff_ac[1], width, height, wHfMalta_X * std::sqrt(hf_asymmetry_), wHfMalta_X / std::sqrt(hf_asymmetry_), norm1Hf_X, stream);
 
-    const float wHfMalta = 18.7237414387f;
-    const float norm1Hf = 4498534.45232f;
-    MaltaDiffMapLF(hf1[1], hf2[1], block_diff_ac[1], width, height, wHfMalta * std::sqrt(hf_asymmetry_), wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, stream);
-
-    const float wHfMaltaX = 6923.99476109f;
-    const float norm1HfX = 8051.15833247f;
-    MaltaDiffMapLF(hf1[0], hf2[0], block_diff_ac[0], width, height, wHfMaltaX * std::sqrt(hf_asymmetry_), wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX, stream);
-
-    const float wMfMalta = 37.0819870399f;
-    const float norm1Mf = 130262059.556f;
-    MaltaDiffMapLF(mf1[1], mf2[1], block_diff_ac[1], width, height, wMfMalta, wMfMalta, norm1Mf, stream);
-
-    const float wMfMaltaX = 8246.75321353f;
-    const float norm1MfX = 1009002.70582f;
-    MaltaDiffMapLF(mf1[0], mf2[0], block_diff_ac[0], width, height, wMfMaltaX, wMfMaltaX, norm1MfX, stream);
+    const float2 wMfMalta_X = {8246.75321353f, 37.0819870399f};
+    const float2 norm1Mf_X = {1009002.70582f, 130262059.556f};
+    MaltaDiffMapLF(mf1[0], mf2[0], mf1[1], mf2[1], block_diff_ac[0], block_diff_ac[1], width, height, wMfMalta_X, wMfMalta_X, norm1Mf_X, stream);
 
     const float wmul[9] = {
       400.0f,         1.50815703118f,  0.0f,
