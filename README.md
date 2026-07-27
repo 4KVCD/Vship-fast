@@ -169,8 +169,8 @@ Original Repo | GPU | 162s
 Vapoursynth Vship | GPU | 28.558s
 FFVship | GPU | 16.184s
 --- **Vulkan** --- | ---
-Vapoursynth Vship | GPU | 53.750s
-FFVship | GPU | 41.297s
+Vapoursynth Vship | GPU | 45.402s
+FFVship | GPU | 25.922s
 
 
 `vship` dramatically outperforms CPU-based and GPU-based implementations of these metrics
