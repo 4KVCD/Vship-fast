@@ -67,13 +67,15 @@ else ifeq ($(BACKEND), Vulkan)
 	VSHIP_CXX = $(CXX)
 	VSHIP_CXXFLAGS += -DVULKANBUILD -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field
 	ifeq ($(OS),Windows_NT)
-		VSHIP_LDFLAGS += -I "${VULKAN_SDK}\Include" -L "${VULKAN_SDK}\Lib" -lvulkan-1
+		VSHIP_CXXFLAGS += -I "${VULKAN_SDK}\Include"
+		VSHIP_LDFLAGS += -L "${VULKAN_SDK}\Lib" -lvulkan-1
 	else
 		ifeq ($(VULKAN_SDK), )
 			VSHIP_LDFLAGS += -lvulkan
 			PKGSTATIC_LD += -lvulkan
 		else
-			LDFLAGS += -I "${VULKAN_SDK}/include" -L "${VULKAN_SDK}/lib" -lvulkan
+			VSHIP_CXXFLAGS += -I "${VULKAN_SDK}/include"
+			LDFLAGS += -L "${VULKAN_SDK}/lib" -lvulkan
 			PKGSTATIC_LD += -L "${VULKAN_SDK}/lib" -lvulkan
 		endif
 		VSHIP_CXXFLAGS += -fPIC
@@ -101,6 +103,7 @@ ifeq ($(OS),Windows_NT)
 	FFVSHIP_CXXFLAGS += -I include
 
 	STATIC_ARCHIVING := lib /nologo /out:libvship$(staticend) libvship.o
+	RM := del
 else
 	dllend := .so
 	exeend :=
@@ -123,6 +126,8 @@ else
 	#finding libcudart
 	#CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
 	STATIC_ARCHIVING := ar rcs libvship$(staticend) libvship.o
+
+	RM := rm
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -199,7 +204,7 @@ build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) -c src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) -o "libvship.o"
 	$(VSHIP_LD) libvship.o $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
 	$(STATIC_ARCHIVING)
-	rm libvship.o
+	$(RM) "libvship.o"
 else
 build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
