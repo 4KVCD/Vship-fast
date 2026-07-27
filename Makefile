@@ -15,7 +15,7 @@ HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx10
 
 VSHIP_VERSION_MAJOR=5
 VSHIP_VERSION_MINOR=1
-VSHIP_VERSION_MINORMINOR=0
+VSHIP_VERSION_MINORMINOR=1
 
 CXXFLAGS += -DVSHIP_VERSION_MAJOR=$(VSHIP_VERSION_MAJOR) -DVSHIP_VERSION_MINOR=$(VSHIP_VERSION_MINOR) -DVSHIP_VERSION_MINORMINOR=$(VSHIP_VERSION_MINORMINOR)
 VSHIP_CXXFLAGS += -std=c++17 -I "$(current_dir)include" -shared
@@ -167,6 +167,7 @@ shaderBuild: .FORCE
 	slangc src/Vulkan/butter/shaders/separateFrequencies.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry subarray_removerangearound0 -entry removerangearound0 -entry subarray_amplifyrangearound0 -entry supressXbyY -entry separateHf_Uhf -entry XybLowFreqToVals -o libvshipSpvShaders/separateFrequenciesButter.spv
 	slangc src/Vulkan/cvvdp/shaders/distmap_specifics.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry mergeChromaNorm -entry JODIZE -o libvshipSpvShaders/distmap_specificsCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/lpyr.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry gaussPyrReduce -entry gaussPyrExpand -entry baseBandPyrRefine -o libvshipSpvShaders/lpyrCVVDP.spv
+	slangc src/Vulkan/cvvdp/shaders/fromLpyrToCSF.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry fromPyrReduceToCSF -o libvshipSpvShaders/fromLpyrToCSFCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/pooling.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry reduceSum -o libvshipSpvShaders/poolingCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/colors.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry XYZ_to_dkl -entry displayEncodePQ -entry displayEncodeBT709 -o libvshipSpvShaders/colorsCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/maskingModel.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry preGaussianPreCompute -entry computeD -entry computeD_baseband -o libvshipSpvShaders/maskingModelCVVDP.spv

@@ -4,6 +4,38 @@ namespace cvvdp{
 
 #include "../util/vulkanDeviceManager.hpp"
 
+void placeFromPyrReduceToCSF(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress mem_d2, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler& csfhandle){
+    const int64_t small_width = (width+1)/2;
+    const int64_t small_height = (height+1)/2;
+
+    int th_x = 16;
+    int th_y = 16;
+    int64_t bl_x = (width+th_x-1)/th_x;
+    int64_t bl_y = (height+th_y-1)/th_y;
+
+    VkPipeline pipeline = deviceHelper->cachedPipeline["fromLpyrToCSFCVVDP.spv:fromPyrReduceToCSF"];
+    uint8_t kernelArguments[128];
+    fillKernelArguments(0, kernelArguments, mem_d, mem_d2, csfhandle.mem_d, pyramidSize, width, height, scale, channel);
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
+    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
+        //read input luminance plane
+        {mem_d+sizeof(float)*pyramidSize*channel, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*channel, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+
+        //write contrast
+        {mem_d+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+
+        //write smallScale
+        {mem_d+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*small_width*small_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*small_width*small_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+
+        //write OR read Lbkg depending on channel 0
+        {mem_d+sizeof(float)*pyramidSize*4, sizeof(float)*width*height, (channel == 0) ? VK_ACCESS_2_MEMORY_WRITE_BIT : VK_ACCESS_2_MEMORY_READ_BIT, (channel == 0) ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*4, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+    });
+}
+
 void placeGaussPyrReduce(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress src, int64_t source_width, int64_t source_height){
     int nw = (source_width+1)/2;
     int nh = (source_height+1)/2;
@@ -41,34 +73,19 @@ void placeGaussPyrExpand(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuf
 
 //gets the contrast from the layers
 template<bool isMean, int multiplier>
-void placeBaseBandPyrRefine(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress p, VkDeviceAddress Lbkg, int64_t width){
+void placeBaseBandPyrRefine(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress p, VkDeviceAddress Lbkg, int64_t width){
     int th_x = 256;
     int64_t bl_x = (width + th_x-1)/th_x;
 
     constexpr uint conditions = (isMean ? 1 : 0);
     VkPipeline pipeline = deviceHelper->cachedPipeline["lpyrCVVDP.spv:baseBandPyrRefine"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, p, Lbkg, width, conditions, multiplier);
+    fillKernelArguments(0, kernelArguments, dst, p, Lbkg, width, conditions, multiplier);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, 1, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {p, width*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {Lbkg, (isMean ? 1 : width)*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });
-}
-
-std::vector<float> get_frequencies(const int64_t width, const int64_t height, const float ppd){
-    const float min_freq = 0.2;
-    const int maxLevel_forRes = std::log2(std::min(width, height))-1;
-    const int maxLevel_forPPD = std::ceil(-std::log2(2*min_freq/0.3228/ppd))+3;
-    const int maxLevel_hard = 14;
-    const int levels = std::min(maxLevel_forPPD, std::min(maxLevel_forRes, maxLevel_hard));
-
-    std::vector<float> band_frequencies(levels);
-    band_frequencies[0] = 0.5*ppd;
-    for (int i = 0; i < levels-1; i++){
-        band_frequencies[i+1] = 0.3228*0.5*ppd/((float)(1 << i));
-    }
-    return band_frequencies;
 }
 
 //in float
@@ -85,86 +102,5 @@ int64_t LpyrMemoryNeedPerPlane(int64_t width, int64_t height, float ppd){
     }
     return res;
 }
-
-class LpyrManager{
-    VshipDeviceHelper* deviceHelper;
-    std::vector<std::pair<int64_t, int64_t>> resolutions; //for each band
-    std::vector<VkDeviceAddress> adresses;
-    int64_t planeOffset;
-    std::vector<float> band_frequencies;
-public: 
-    //plane contains 5 planes each twice the size
-    //the last plane will contain L_bkg while the first planes should contain the 4 temporal channels for the first half
-    LpyrManager(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress plane, const int64_t width, const int64_t height, const float ppd, int64_t bandOffset){
-        this->deviceHelper = deviceHelper;
-        band_frequencies = get_frequencies(width, height, ppd);
-        const int levels = band_frequencies.size();
-
-        planeOffset = bandOffset;
-
-        resolutions.resize(levels);
-        adresses.resize(levels);
-        int64_t w = width;
-        int64_t h = height;
-        VkDeviceAddress p = plane;
-        for (int i = 0; i < levels; i++){
-            resolutions[i].first = w;
-            resolutions[i].second = h;
-            adresses[i] = p;
-
-            if (i != levels-1){
-                //first is Y_sustained, it governs L_BKG
-                placeGaussPyrReduce(deviceHelper, cmdBuff, p+sizeof(float)*w*h, p, w, h);
-                placeGaussPyrExpand<false, false, true>(deviceHelper, cmdBuff, p+sizeof(float)*4*planeOffset, p+sizeof(float)*w*h, w, h);
-                placeSubArray(deviceHelper, cmdBuff, p, p+sizeof(float)*4*planeOffset, p, w*h);
-                if (i == 0){
-                    placeBaseBandPyrRefine<false, 1>(deviceHelper, cmdBuff, p, p+sizeof(float)*4*planeOffset, w*h);
-                } else {
-                    placeBaseBandPyrRefine<false, 2>(deviceHelper, cmdBuff, p, p+sizeof(float)*4*planeOffset, w*h);
-                }
-                //then other channels
-                for (int channel = 1; channel < 4; channel++){
-                    //we first create the next step of the pyramid
-                    placeGaussPyrReduce(deviceHelper, cmdBuff, p+sizeof(float)*(w*h+channel*planeOffset), p+sizeof(float)*channel*planeOffset, w, h);
-                    //then we substract its upscaled version from the original to create the "layer"
-                    placeGaussPyrExpand<true, false, false>(deviceHelper, cmdBuff, p+sizeof(float)*channel*planeOffset, p+sizeof(float)*(w*h+channel*planeOffset), w, h);
-                    //then we transform this layer into a contrast by using the L_BKG computed before the loop
-                    if (i == 0){
-                        placeBaseBandPyrRefine<false, 1>(deviceHelper, cmdBuff, p+sizeof(float)*channel*planeOffset, p+sizeof(float)*4*planeOffset, w*h);
-                    } else {
-                        placeBaseBandPyrRefine<false, 2>(deviceHelper, cmdBuff, p+sizeof(float)*channel*planeOffset, p+sizeof(float)*4*planeOffset, w*h);
-                    }
-                }
-            } else {
-                //here Lbkg is different, it is the mean.
-                //now we need to take the mean. 
-                placeComputeMean<1>(deviceHelper, cmdBuff, p, p+sizeof(float)*4*planeOffset, w*h, true);
-                VkDeviceAddress meanp = p+sizeof(float)*4*planeOffset;
-                for (int channel = 0; channel < 4; channel++){
-                    placeBaseBandPyrRefine<true, 1>(deviceHelper, cmdBuff, p+sizeof(float)*channel*planeOffset, meanp, w*h);
-                }
-            }
-
-            p += sizeof(float)*w*h;
-            w = (w+1)/2;
-            h = (h+1)/2;
-        }
-    }
-    int getSize(){
-        return resolutions.size();
-    }
-    std::pair<int64_t, int64_t> getResolution(int i){
-        return resolutions[i];
-    }
-    float getFrequency(int i){
-        return band_frequencies[i];
-    }
-    VkDeviceAddress getLbkg(int band){
-        return adresses[band]+sizeof(float)*4*planeOffset;
-    }
-    VkDeviceAddress getContrast(int channel, int band){
-        return adresses[band]+sizeof(float)*channel*planeOffset;
-    }
-};
 
 }

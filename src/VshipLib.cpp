@@ -9,7 +9,7 @@
 #define VSHIP_VERSION_MINOR 1
 #endif
 #ifndef VSHIP_VERSION_MINORMINOR
-#define VSHIP_VERSION_MINORMINOR 0
+#define VSHIP_VERSION_MINORMINOR 1
 #endif
 
 #ifdef VULKANBUILD
@@ -316,7 +316,7 @@ EXPORTPREPROCESS Vship_Exception Vship_GetDistmapResolution(Vship_Handle handler
     return err;
 }
 
-EXPORTPREPROCESS Vship_Exception Vship_Reset(Vship_Handle handler){
+EXPORTPREPROCESS Vship_Exception Vship_Reset (Vship_Handle handler){
     Vship_Exception err = Vship_NoError;
     auto* actualHandler = (HandlerData*)handler;
 

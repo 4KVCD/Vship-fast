@@ -41,11 +41,15 @@ __global__ void fromPyrReduceToCSF_Kernel(float* mem_d, float* mem_d2, const int
         int64_t x = base_x-4 + (i%23);
         int64_t y = base_y-4 + (i/23);
 
-        if (x < 0) x = -x-1;
-        if (x >= width) x = 2*width - x - 2;
+        while (x < 0 || x >= width){
+            if (x < 0) x = -x-1;
+            if (x >= width) x = 2*width - x - 2;
+        }
 
-        if (y < 0) y = -y-1;
-        if (y >= height) y = 2*height - y - 2;
+        while (y < 0 || y >= height){
+            if (y < 0) y = -y-1;
+            if (y >= height) y = 2*height - y - 2;
+        }
 
         bufferInput[i].x = inputPlane1[y*width+x];
         bufferInput[i].y = inputPlane2[y*width+x];

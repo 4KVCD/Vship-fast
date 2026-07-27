@@ -13,8 +13,8 @@
 #include "resize.hpp"
 #include "temporalFilter.hpp"
 #include "pooling.hpp"
-#include "lpyr.hpp"
 #include "csf.hpp"
+#include "lpyr.hpp"
 #include "gaussianBlur.hpp"
 #include "maskingModel.hpp"
 #include "distmap_specifics.hpp"
@@ -23,21 +23,8 @@ namespace cvvdp{
 
 VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model){
     const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
-    VkDeviceAddress Y_sustained1 = mem_d;
-    VkDeviceAddress RG_sustained1 = mem_d + sizeof(float)*pyramidSize;
-    VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*pyramidSize;
-    VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*pyramidSize;
-
-    VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*pyramidSize;
-    VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*pyramidSize;
-    VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*pyramidSize;
-    VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*pyramidSize;
-    
-    VkDeviceAddress tempResize1 = mem_d + sizeof(float)*10*pyramidSize; //only allocated if needed
-    VkDeviceAddress tempResize2 = mem_d + sizeof(float)*10*pyramidSize+resize_width*source_height*sizeof(float);
 
     const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
-    VkDeviceAddress res[4] = {mem_d + sizeof(float)*10*pyramidSize, mem_d + sizeof(float)*11*pyramidSize, mem_d + sizeof(float)*12*pyramidSize, mem_d + sizeof(float)*13*pyramidSize};
     int64_t w = resize_width;
     int64_t h = resize_height;
     std::vector<int64_t> bandOffsets(levels);
@@ -48,51 +35,70 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
         h = (h+1)/2;
     }
 
+    std::vector<std::vector<VkDeviceAddress>> memPlace1;
+    std::vector<std::vector<VkDeviceAddress>> memPlace2;
+    memPlace1.resize(9);
+    memPlace2.resize(9);
+    for (int channel = 0; channel < memPlace1.size(); channel++){
+        memPlace1[channel].resize(levels);
+        memPlace2[channel].resize(levels);
+        for (int band = 0; band < levels; band++){
+            memPlace1[channel][band] = mem_d+sizeof(float)*channel*pyramidSize+bandOffsets[band];
+            memPlace2[channel][band] = mem_d+sizeof(float)*(channel+9)*pyramidSize+bandOffsets[band];
+        }
+    }
+
     if (source_width < resize_width){
         //this means that the planes contained in Y_sustained... are not the right size!
         //we need to resize now
-        placeResizePlane(deviceHelper, cmdBuff, Y_sustained1, tempResize1, Y_sustained1, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, RG_sustained1, tempResize1, RG_sustained1, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, YV_sustained1, tempResize1, YV_sustained1, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, Y_transient1, tempResize1, Y_transient1, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, Y_sustained2, tempResize2, Y_sustained2, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, RG_sustained2, tempResize2, RG_sustained2, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, YV_sustained2, tempResize2, YV_sustained2, source_width, source_height, resize_width, resize_height);
-        placeResizePlane(deviceHelper, cmdBuff, Y_transient2, tempResize2, Y_transient2, source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace1[0][0], memPlace1[4][0], memPlace1[0][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace1[1][0], memPlace1[4][0], memPlace1[1][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace1[2][0], memPlace1[4][0], memPlace1[2][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace1[3][0], memPlace1[4][0], memPlace1[3][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace2[0][0], memPlace2[4][0], memPlace2[0][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace2[1][0], memPlace2[4][0], memPlace2[1][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace2[2][0], memPlace2[4][0], memPlace2[2][0], source_width, source_height, resize_width, resize_height);
+        placeResizePlane(deviceHelper, cmdBuff, memPlace2[3][0], memPlace2[4][0], memPlace2[3][0], source_width, source_height, resize_width, resize_height);
     }
 
     const float ppd = model->get_screen_ppd();
-    LpyrManager LPyr1(deviceHelper, cmdBuff, mem_d, resize_width, resize_height, ppd, pyramidSize);
-    LpyrManager LPyr2(deviceHelper, cmdBuff, mem_d + sizeof(float)*5*pyramidSize, resize_width, resize_height, ppd, pyramidSize);
     
     w = resize_width;
     h = resize_height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
             for (int channel = 0; channel < 4; channel++){
-                placePreGaussianPreCompute(deviceHelper, cmdBuff, LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle);
+                placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, channel, csfhandle);
             }
-            //it writes on its source
-            placeComputeD(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[1]+bandOffsets[band], res[2]+bandOffsets[band], res[3]+bandOffsets[band], LPyr1.getContrast(0, band), LPyr1.getContrast(1, band), LPyr1.getContrast(2, band), LPyr1.getContrast(3, band), LPyr2.getContrast(0, band), LPyr2.getContrast(1, band),LPyr2.getContrast(2, band), LPyr2.getContrast(3, band), w, h, gaussianhandle);
+            placeComputeD(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle);
         } else {
             //baseband
+            //here Lbkg is different, it is the mean.
+            //now we need to take the mean.
+            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[4][band], w*h, true);
+            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace2[0][band], memPlace2[4][band], w*h, true);
             for (int channel = 0; channel < 4; channel++){
-                placeComputeD_baseband(deviceHelper, cmdBuff, res[channel]+bandOffsets[band], LPyr1.getLbkg(band), LPyr1.getContrast(channel, band), LPyr2.getContrast(channel, band), w, h, channel, band, csfhandle);
+                placeBaseBandPyrRefine<true, 1>(deviceHelper, cmdBuff, memPlace1[channel+5][band], memPlace1[channel][band], memPlace1[4][band], w*h);
+                placeBaseBandPyrRefine<true, 1>(deviceHelper, cmdBuff, memPlace2[channel+5][band], memPlace2[channel][band], memPlace2[4][band], w*h);
+                placeComputeD_baseband(deviceHelper, cmdBuff, memPlace1[channel][band], memPlace1[4][band], memPlace1[5+channel][band], memPlace2[5+channel][band], w, h, channel, band, csfhandle);
             }
         }
         w = (w+1)/2;
         h = (h+1)/2;
     }
 
+    w = resize_width;
+    h = resize_height;
     int tempOffset = 0;
-    VkDeviceAddress temp = LPyr1.getLbkg(0); //we take all the space! so we use band0
+    VkDeviceAddress temp = memPlace1[4][0]; //we take all the space! so we use band0
     for (int band = 0; band < levels; band++){
         for (int channel = 0; channel < 4; channel++){
-            const auto [w, h] = LPyr1.getResolution(band);
             const int64_t size = w*h;
-            placeComputeMean<2>(deviceHelper, cmdBuff, res[channel]+bandOffsets[band], temp+sizeof(float)*tempOffset, size, true);
+            placeComputeMean<2>(deviceHelper, cmdBuff, memPlace1[channel][band], temp+sizeof(float)*tempOffset, size, true);
             tempOffset++; //we stored the norm at temp[tempOffset]
         }
+        w = (w+1)/2;
+        h = (h+1)/2;
     }
 
     deviceHelper->device.memCpyDtoH(cmdBuff, outputScoresCPU, temp, sizeof(float)*levels*4);
@@ -100,11 +106,12 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
 
     if (outputDistmap){
         //we want a distmap
+        VkDeviceAddress res[4] = {memPlace1[0][0], memPlace1[1][0], memPlace1[2][0], memPlace1[3][0]};
         placeGetDistMap(deviceHelper, cmdBuff, res, bandOffsets, resize_width, resize_height, levels);
         //result is in res[0], we can now discard other planes
     }
 
-    return res[0];
+    return memPlace1[0][0];
 }
 
 float cpuPostTreatment(float* scores, uint levels){
@@ -197,7 +204,7 @@ public:
         size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
         const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
         size_t preLoadBufferSize = 2*(source_width*source_height*3*sizeof(float)+source_height*resize_width*sizeof(float)) + tempSizeConverter1 + tempSizeConverter2;
-        size_t finalStageBufferSize = 2*sizeof(float)*pyramidSize*5 + sizeof(float)*pyramidSize*4;
+        size_t finalStageBufferSize = 2*sizeof(float)*pyramidSize*9;
         if (source_width < resize_width){
             //resize at the end
             finalStageBufferSize += 2*(resize_width*minheight*sizeof(float));
@@ -361,10 +368,10 @@ public:
         VkDeviceAddress YV_sustained1 = mem_d + sizeof(float)*2*pyramidSize;
         VkDeviceAddress Y_transient1 = mem_d + sizeof(float)*3*pyramidSize;
 
-        VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*5*pyramidSize;
-        VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*6*pyramidSize;
-        VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*7*pyramidSize;
-        VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*8*pyramidSize;
+        VkDeviceAddress Y_sustained2 = mem_d + sizeof(float)*9*pyramidSize;
+        VkDeviceAddress RG_sustained2 = mem_d + sizeof(float)*10*pyramidSize;
+        VkDeviceAddress YV_sustained2 = mem_d + sizeof(float)*11*pyramidSize;
+        VkDeviceAddress Y_transient2 = mem_d + sizeof(float)*12*pyramidSize;
 
         //let's get the temporal channel out of the temporal ring!
 

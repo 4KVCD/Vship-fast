@@ -17,6 +17,21 @@ int indexSearch(const float xp[32], float x){
 
 #include "../util/vulkanDeviceManager.hpp"
 
+std::vector<float> get_frequencies(const int64_t width, const int64_t height, const float ppd){
+    const float min_freq = 0.2;
+    const int maxLevel_forRes = std::log2(std::min(width, height))-1;
+    const int maxLevel_forPPD = std::ceil(-std::log2(2*min_freq/0.3228/ppd))+3;
+    const int maxLevel_hard = 14;
+    const int levels = std::min(maxLevel_forPPD, std::min(maxLevel_forRes, maxLevel_hard));
+
+    std::vector<float> band_frequencies(levels);
+    band_frequencies[0] = 0.5*ppd;
+    for (int i = 0; i < levels-1; i++){
+        band_frequencies[i+1] = 0.3228*0.5*ppd/((float)(1 << i));
+    }
+    return band_frequencies;
+}
+
 class CSF_Handler{
     VshipDeviceHelper* deviceHelper;
     float* cpumem;

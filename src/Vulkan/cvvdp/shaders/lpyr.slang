@@ -91,7 +91,7 @@ void gaussPyrExpand(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Grou
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void baseBandPyrRefine(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, float* p, uniform float* Lbkg, uniform int64_t width, uniform uint conditions, uniform int multiplier){
+void baseBandPyrRefine(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* p, uniform float* Lbkg, uniform int64_t width, uniform uint conditions, uniform int multiplier){
     const int64_t thid = threadIdx.x + blockIdx.x * 256;
     if (thid >= width) return;
 
@@ -106,6 +106,6 @@ void baseBandPyrRefine(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
         //then our adress is the mean, a single float at 0
         val = min(p[thid]/max(0.01f, Lbkg[0]), 1000.f);
     }
-    p[thid] = val*multiplier;
+    dst[thid] = val*multiplier;
     //if (thid == 0) printf("baseBandPyrRefine %f at width %lld\n", p[thid], width);
 }
