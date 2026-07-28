@@ -175,7 +175,7 @@ cleanbuild: .FORCE
 clean: cleanbuildFFVSHIP cleanbuild
 
 buildFFVSHIP: cleanbuildFFVSHIP src/FFVship.cpp .FORCE
-	$(CXX) src/FFVship.cpp $(CXXFLAGS) $(LDFLAGS) $(FFVSHIP_CXXFLAGS) $(FFVSHIP_LDFLAGS) -o FFVship$(exeend)
+	$(CXX) src/FFVship.cpp $(FFVSHIP_CXXFLAGS) $(FFVSHIP_LDFLAGS) $(CXXFLAGS) $(LDFLAGS) -o FFVship$(exeend)
 
 shaderEmbedder: .FORCE
 ifeq ($(BACKEND),Vulkan)
