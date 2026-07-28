@@ -166,7 +166,15 @@ endef
 
 .FORCE:
 
-buildFFVSHIP: src/FFVship.cpp .FORCE
+cleanbuildFFVSHIP: .FORCE
+	$(RM) -f FFVship$(exeend)
+
+cleanbuild: .FORCE
+	$(RM) -f shaderEmbedder$(exeend) libvship_static.pc libvship.pc libvship$(staticend) libvship$(dllend)
+
+clean: cleanbuildFFVSHIP cleanbuild
+
+buildFFVSHIP: cleanbuildFFVSHIP src/FFVship.cpp .FORCE
 	$(CXX) src/FFVship.cpp $(CXXFLAGS) $(LDFLAGS) $(FFVSHIP_CXXFLAGS) $(FFVSHIP_LDFLAGS) -o FFVship$(exeend)
 
 shaderEmbedder: .FORCE
@@ -198,13 +206,13 @@ finalizepkgConfig: .FORCE
 	fi
 
 ifeq ($(ENABLE_STATIC), 1)
-build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
+build: cleanbuild shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) -c src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) -o "libvship.o"
 	$(VSHIP_LD) libvship.o $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
 	$(STATIC_ARCHIVING)
 	$(RM) "libvship.o"
 else
-build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
+build: cleanbuild shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
 endif
 
