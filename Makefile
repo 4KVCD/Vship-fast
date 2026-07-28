@@ -4,9 +4,11 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 CXX ?= clang++
 BACKEND ?= HIP
-#can be Cuda and Vulkan
+#can be Cuda, HIP and Vulkan
 CXXFLAGS ?=
 LDFLAGS ?=
+#static only supported for vulkan for now
+ENABLE_STATIC ?= 1
 ARCH ?= native
 #can be native or all
 DEBUG ?= 0
@@ -18,7 +20,8 @@ VSHIP_VERSION_MINOR=1
 VSHIP_VERSION_MINORMINOR=1
 
 CXXFLAGS += -DVSHIP_VERSION_MAJOR=$(VSHIP_VERSION_MAJOR) -DVSHIP_VERSION_MINOR=$(VSHIP_VERSION_MINOR) -DVSHIP_VERSION_MINORMINOR=$(VSHIP_VERSION_MINORMINOR)
-VSHIP_CXXFLAGS += -std=c++17 -I "$(current_dir)include" -shared
+VSHIP_CXXFLAGS += -std=c++17 -I "$(current_dir)include"
+VSHIP_LDFLAGS += -shared
 ifeq ($(DEBUG), 1)
 	VSHIP_CXXFLAGS += -g -O2
 else
@@ -29,6 +32,8 @@ ifeq ($(MITIGATE_MALLOC_ASYNC), on)
 endif
 
 ifeq ($(BACKEND), HIP)
+	ENABLE_STATIC := 0
+	VSHIP_LD = hipcc
 	VSHIP_CXX = hipcc
 	VSHIP_CXXFLAGS += -Wno-ignored-attributes
 	ifeq ($(ARCH), native)
@@ -39,9 +44,12 @@ ifeq ($(BACKEND), HIP)
 	ifeq ($(OS),Windows_NT)
 
 	else
+		PKGSTATIC_LD :=
 		VSHIP_CXXFLAGS += -fPIC
 	endif
 else ifeq ($(BACKEND), Cuda)
+	ENABLE_STATIC := 0
+	VSHIP_LD = nvcc
 	VSHIP_CXX = nvcc -x cu
 	ifeq ($(ARCH), native)
 		VSHIP_CXXFLAGS += -arch=native
@@ -51,9 +59,11 @@ else ifeq ($(BACKEND), Cuda)
 	ifeq ($(OS),Windows_NT)
 
 	else
+		PKGSTATIC_LD :=
 		VSHIP_CXXFLAGS += -Xcompiler -fPIC
 	endif
 else ifeq ($(BACKEND), Vulkan)
+	VSHIP_LD = $(CXX)
 	VSHIP_CXX = $(CXX)
 	VSHIP_CXXFLAGS += -DVULKANBUILD -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field
 	ifeq ($(OS),Windows_NT)
@@ -61,8 +71,10 @@ else ifeq ($(BACKEND), Vulkan)
 	else
 		ifeq ($(VULKAN_SDK), )
 			VSHIP_LDFLAGS += -lvulkan
+			PKGSTATIC_LD += -lvulkan
 		else
 			LDFLAGS += -I "${VULKAN_SDK}/include" -L "${VULKAN_SDK}/lib" -lvulkan
+			PKGSTATIC_LD += -L "${VULKAN_SDK}/lib" -lvulkan
 		endif
 		VSHIP_CXXFLAGS += -fPIC
 	endif
@@ -80,15 +92,19 @@ endif
 ifeq ($(OS),Windows_NT)
 	dllend := .dll
 	exeend := .exe
+	staticend := .lib
 
 	plugin_install_path := $(APPDATA)\VapourSynth\plugins64
 	exe_install_path := $(ProgramFiles)\FFVship.exe
 
 	FFVSHIP_LDFLAGS +=  -lffms2 -llibvship -L ./
 	FFVSHIP_CXXFLAGS += -I include
+
+	STATIC_ARCHIVING := lib /nologo /out:libvship$(staticend) libvship.o
 else
 	dllend := .so
 	exeend :=
+	staticend := .a
 
 	plugin_install_path := $(DESTDIR)$(PREFIX)/lib/vapoursynth
 	lib_install_path := $(DESTDIR)$(PREFIX)/lib
@@ -96,11 +112,17 @@ else
 	header_install_path := $(DESTDIR)$(PREFIX)/include
 	pkgconfig_install_path := $(lib_install_path)/pkgconfig
 
-	FFVSHIP_LDFLAGS += $(shell pkg-config --libs ffms2) -lvship -L ./
+	FFVSHIP_LDFLAGS += $(shell pkg-config --libs ffms2) -L ./
+	ifneq ("$(wildcard $(current_dir)/libvship_static.pc)","")
+		FFVSHIP_LDFLAGS += $(shell PKG_CONFIG_PATH=$$PWD pkg-config --libs libvship_static)
+	else
+		FFVSHIP_LDFLAGS += -lvship
+	endif
 	FFVSHIP_CXXFLAGS += $(shell pkg-config --cflags-only-I ffms2 libavutil)
 
 	#finding libcudart
 	#CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
+	STATIC_ARCHIVING := ar rcs libvship$(staticend) libvship.o
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -113,8 +135,9 @@ else
 	endif
 endif
 
+#DESTDIR and PREFIX will get replaced by sed at install time
 define PKG_CONFIG
-prefix=$(DESTDIR)$(PREFIX)
+prefix=DESTDIRPREFIX
 exec_prefix=$${prefix}
 includedir=$${prefix}/include
 libdir=$${exec_prefix}/lib
@@ -124,6 +147,18 @@ Description: GPU Accelerated video quality metric library
 Version: $(VSHIP_VERSION_MAJOR).$(VSHIP_VERSION_MINOR).$(VSHIP_VERSION_MINORMINOR)
 Cflags: -I$${includedir}
 Libs: -L$${libdir} -lvship
+endef
+define PKG_CONFIG_STATIC
+prefix=DESTDIRPREFIX
+exec_prefix=$${prefix}
+includedir=$${prefix}/include
+libdir=$${exec_prefix}/lib
+
+Name: libvship
+Description: GPU Accelerated video quality metric library
+Version: $(VSHIP_VERSION_MAJOR).$(VSHIP_VERSION_MINOR).$(VSHIP_VERSION_MINORMINOR)
+Cflags: -I$${includedir}
+Libs: -L$${libdir} -l:libvship.a $(PKGSTATIC_LD)
 endef
 
 .FORCE:
@@ -137,11 +172,38 @@ ifeq ($(BACKEND),Vulkan)
 	./shaderEmbedder libvshipSpvShaders include/libvshipSpvShaders.hpp
 endif
 
+#no pkgconfig for windows
 genpkgConfig: .FORCE
+ifeq ($(OS),Windows_NT)
+else
 	$(file > libvship.pc,$(PKG_CONFIG))
+ifeq ($(ENABLE_STATIC), 1)
+	$(file > libvship_static.pc,$(PKG_CONFIG_STATIC))
+endif
+endif
 
-build: shaderEmbedder src/VshipLib.cpp .FORCE
-	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(LDFLAGS) $(VSHIP_CXXFLAGS) $(VSHIP_LDFLAGS) -o "$(current_dir)libvship$(dllend)"
+finalizepkgConfig: .FORCE
+	@if [ -f "$(current_dir)libvship.pc" ]; then \
+		echo sed -i 's#DESTDIR#$(DESTDIR)#' libvship.pc; \
+		sed -i 's#DESTDIR#$(DESTDIR)#' libvship.pc; \
+		sed -i 's#PREFIX#$(PREFIX)#' libvship.pc; \
+	fi
+	@if [ -f "$(current_dir)libvship_static.pc" ]; then \
+		echo sed -i 's#DESTDIR#$(DESTDIR)#' libvship_static.pc; \
+		sed -i 's#DESTDIR#$(DESTDIR)#' libvship_static.pc; \
+		sed -i 's#PREFIX#$(PREFIX)#' libvship_static.pc; \
+	fi
+
+ifeq ($(ENABLE_STATIC), 1)
+build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
+	$(VSHIP_CXX) -c src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) -o "libvship.o"
+	$(VSHIP_LD) libvship.o $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
+	$(STATIC_ARCHIVING)
+	rm libvship.o
+else
+build: shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
+	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
+endif
 
 shaderBuild: .FORCE
 	slangc src/Vulkan/util/shaders/Planed.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry StrideEliminator -entry StrideAdder -o libvshipSpvShaders/Planed.spv
@@ -178,23 +240,33 @@ ifeq ($(OS),Windows_NT)
 install:
 	if exist "$(current_dir)libvship$(dllend)" copy "$(current_dir)libvship$(dllend)" "$(plugin_install_path)"
 else
-install: genpkgConfig
+install: finalizepkgConfig
+	install -d "$(plugin_install_path)";
+	install -d "$(header_install_path)";
+	install -d "$(pkgconfig_install_path)";
+	@if [ -f "$(current_dir)libvship$(staticend)" ]; then \
+		echo install -m755 "$(current_dir)libvship$(staticend)" "$(lib_install_path)/libvship$(staticend)"; \
+		install -m755 "$(current_dir)libvship$(staticend)" "$(lib_install_path)/libvship$(staticend)"; \
+	fi
 	@if [ -f "$(current_dir)libvship$(dllend)" ]; then \
-		install -d "$(plugin_install_path)"; \
-		install -d "$(header_install_path)"; \
-		install -d "$(pkgconfig_install_path)"; \
+		echo install -m755 "$(current_dir)libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)"; \
 		install -m755 "$(current_dir)libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)"; \
+		echo ln -sf "../libvship$(dllend)" "$(plugin_install_path)/libvship$(dllend)"; \
 		ln -sf "../libvship$(dllend)" "$(plugin_install_path)/libvship$(dllend)"; \
-		install -m755 "$(current_dir)src/VshipAPI.h" "$(header_install_path)/VshipAPI.h"; \
-		install -m755 "$(current_dir)src/VshipColor.h" "$(header_install_path)/VshipColor.h"; \
-		install -m755 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc"; \
+	fi
+	install -m755 "$(current_dir)src/VshipAPI.h" "$(header_install_path)/VshipAPI.h";
+	install -m755 "$(current_dir)src/VshipColor.h" "$(header_install_path)/VshipColor.h";
+	install -m644 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc";
+	@if [ -f "$(current_dir)libvship_static.pc" ]; then \
+		echo install -m644 "$(current_dir)libvship_static.pc" "$(pkgconfig_install_path)/libvship_static.pc"; \
+		install -m644 "$(current_dir)libvship_static.pc" "$(pkgconfig_install_path)/libvship_static.pc"; \
 	fi
 	@if [ -f "FFVship" ]; then \
 		install -d "$(exe_install_path)"; \
 		install -m755 FFVship "$(exe_install_path)/FFVship"; \
 	fi
 uninstall:
-	rm -f "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(exe_install_path)/FFVship"
+	rm -f "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(staticend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(pkgconfig_install_path)/libvship.pc" "$(pkgconfig_install_path)/libvship_static.pc" "$(exe_install_path)/FFVship"
 uninstallOld:
 	rm -f "$(plugin_install_path)/vship$(dllend)" "$(lib_install_path)/vship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(exe_install_path)/FFVship"
 endif
