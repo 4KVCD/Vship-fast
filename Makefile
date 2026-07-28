@@ -7,7 +7,7 @@ BACKEND ?= HIP
 #can be Cuda, HIP and Vulkan
 CXXFLAGS ?=
 LDFLAGS ?=
-#static only supported for vulkan for now
+#static only supported for vulkan for now but can be built for every backend, just no pkg-config -> not usable
 ENABLE_STATIC ?= 1
 ARCH ?= native
 #can be native or all
@@ -32,7 +32,6 @@ ifeq ($(MITIGATE_MALLOC_ASYNC), on)
 endif
 
 ifeq ($(BACKEND), HIP)
-	ENABLE_STATIC := 0
 	VSHIP_LD = hipcc
 	VSHIP_CXX = hipcc
 	VSHIP_CXXFLAGS += -Wno-ignored-attributes
@@ -48,7 +47,6 @@ ifeq ($(BACKEND), HIP)
 		VSHIP_CXXFLAGS += -fPIC
 	endif
 else ifeq ($(BACKEND), Cuda)
-	ENABLE_STATIC := 0
 	VSHIP_LD = nvcc
 	VSHIP_CXX = nvcc -x cu
 	ifeq ($(ARCH), native)
@@ -182,7 +180,7 @@ genpkgConfig: .FORCE
 ifeq ($(OS),Windows_NT)
 else
 	$(file > libvship.pc,$(PKG_CONFIG))
-ifeq ($(ENABLE_STATIC), 1)
+ifneq ($(PKGSTATIC_LD),)
 	$(file > libvship_static.pc,$(PKG_CONFIG_STATIC))
 endif
 endif
@@ -245,7 +243,7 @@ ifeq ($(OS),Windows_NT)
 install:
 	if exist "$(current_dir)libvship$(dllend)" copy "$(current_dir)libvship$(dllend)" "$(plugin_install_path)"
 else
-install: finalizepkgConfig
+install: finalizepkgConfig uninstall
 	install -d "$(plugin_install_path)";
 	install -d "$(header_install_path)";
 	install -d "$(pkgconfig_install_path)";
