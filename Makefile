@@ -57,7 +57,9 @@ else ifeq ($(BACKEND), Cuda)
 	ifeq ($(OS),Windows_NT)
 
 	else
-		PKGSTATIC_LD :=
+		#finding libcudart
+		CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
+		PKGSTATIC_LD := -L $(CUDA_LIBPATH) -lcudart
 		VSHIP_CXXFLAGS += -Xcompiler -fPIC
 	endif
 else ifeq ($(BACKEND), Vulkan)
@@ -121,8 +123,6 @@ else
 	endif
 	FFVSHIP_CXXFLAGS += $(shell pkg-config --cflags-only-I ffms2 libavutil)
 
-	#finding libcudart
-	#CUDA_LIBPATH := $(abspath $(dir $(abspath $(lastword $(shell which nvcc))))../lib64)
 	STATIC_ARCHIVING := ar rcs libvship$(staticend) libvship.o
 
 	RM := rm
