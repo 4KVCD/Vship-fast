@@ -8,7 +8,7 @@ BACKEND ?= HIP
 CXXFLAGS ?=
 LDFLAGS ?=
 #static only supported for vulkan for now but can be built for every backend, just no pkg-config -> not usable
-ENABLE_STATIC ?= 1
+ENABLE_STATIC ?= 0
 ARCH ?= native
 #can be native or all
 DEBUG ?= 0
