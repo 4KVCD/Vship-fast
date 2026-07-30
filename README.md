@@ -19,8 +19,6 @@ improvements over CPU implementations. It can be used with a simple binary (FFVs
 
 There are precompiled binaries ready to be used in the release section.
 
-/!\ VulkanVship is very new and experimental, it tends to be slower and may be less reliable.
-
 ## Projects Featuring Vship
 
 If you want to use Vship with a pre-defined workflow, here are some projects
