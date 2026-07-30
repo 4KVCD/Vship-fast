@@ -188,7 +188,7 @@ genpkgConfig: .FORCE
 ifeq ($(OS),Windows_NT)
 else
 	$(file > libvship.pc,$(PKG_CONFIG))
-ifneq ($(PKGSTATIC_LD),)
+ifeq ($(ENABLE_STATIC), 1)
 	$(file > libvship_static.pc,$(PKG_CONFIG_STATIC))
 endif
 endif
