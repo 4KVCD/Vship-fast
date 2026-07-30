@@ -15,3 +15,13 @@ Compiling FFVship on windows has been relatively complex due to lib placement no
 - build FFVship using `make buildFFVSHIP`
 
 The following binary is going to need to be used next to libvship.dll and ffms2.dll (can be found either in the ffms2 repository or stolen from a pre-compiled FFVship release).
+
+## static libvship into FFVship (new, for vship v5.1.1)
+
+if you wish to avoid having a "libvship.dll" next to your newly compiled FFVship.exe, you can statically link against libvship.lib instead. The commandline varies depending on your Backend:
+
+Vulkan: `make build BACKEND=Vulkan ENABLE_STATIC=1; make buildFFVSHIP CXXFLAGS="-DVSHIP_STATIC" LDFLAGS="-L $env:Vulkan_SDK\Lib -lvulkan-1"`
+
+HIP: `make build BACKEND=HIP ENABLE_STATIC=1; make buildFFVSHIP CXX="hipcc" CXXFLAGS="-DVSHIP_STATIC"`
+
+Cuda: `make build BACKEND=Cuda ENABLE_STATIC=1; make buildFFVSHIP CXX="nvcc" CXXFLAGS="-DVSHIP_STATIC"`

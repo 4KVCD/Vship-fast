@@ -10,7 +10,11 @@
 #if defined(EXPORTVSHIPLIB)
 #define EXPORTPREPROCESS __declspec(dllexport)
 #else
+#ifndef VSHIP_STATIC
 #define EXPORTPREPROCESS __declspec(dllimport)
+#else
+#define EXPORTPREPROCESS
+#endif
 #endif
 #else
 #define EXPORTPREPROCESS
