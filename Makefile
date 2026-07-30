@@ -267,7 +267,10 @@ install: finalizepkgConfig uninstall
 	fi
 	install -m755 "$(current_dir)src/VshipAPI.h" "$(header_install_path)/VshipAPI.h";
 	install -m755 "$(current_dir)src/VshipColor.h" "$(header_install_path)/VshipColor.h";
-	install -m644 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc";
+	@if [ -f "$(current_dir)libvship.pc" ]; then \
+		echo install -m644 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc"; \
+		install -m644 "$(current_dir)libvship.pc" "$(pkgconfig_install_path)/libvship.pc"; \
+	fi
 	@if [ -f "$(current_dir)libvship_static.pc" ]; then \
 		echo install -m644 "$(current_dir)libvship_static.pc" "$(pkgconfig_install_path)/libvship_static.pc"; \
 		install -m644 "$(current_dir)libvship_static.pc" "$(pkgconfig_install_path)/libvship_static.pc"; \
