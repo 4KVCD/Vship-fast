@@ -90,7 +90,7 @@ void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer c
         if (i == 2){
             //mf = blur(xyb-lf)
             placeSubArray(deviceHelper, cmdBuff, src[i], lf[i], mf[i], width*height);
-            placeBlur(deviceHelper, cmdBuff, mf[i], temp[i], width, height, gaussianHandle, 3);
+            placeBlur(deviceHelper, cmdBuff, mf[i], temp[0], temp[1], width, height, gaussianHandle, 3);
             break;
         }
         //mf (hf (uhf)) = xyb-lf //mf is stored on hf which is stored in uhf
@@ -114,7 +114,7 @@ void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer c
     for (int i = 0; i < 2; i++){
         //original does uhf = hf but hf is already in uhf.
         //next is hf = blur(hf (uhf)) -> hf is now at its place and uhf has the old hf copy
-        placeBlurDstNoTemp(deviceHelper, cmdBuff, hf[i], uhf[i], width, height, gaussianHandle, 1);
+        placeBlur(deviceHelper, cmdBuff, hf[i], uhf[i], temp[i], width, height, gaussianHandle, 1);
 
         if (i == 0){
             placeSubarray_removerangearound0(deviceHelper, cmdBuff, hf[i], uhf[i], width*height, 1.5f);

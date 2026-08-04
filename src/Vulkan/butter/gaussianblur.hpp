@@ -26,10 +26,11 @@ public:
 
         indices[0] = 0;
         const double sigmas[5] = {1.2, 1.56416327805, 2.7, 3.22489901262, 7.15593339443};
+        const int windowsizes[5] = {3, 4, 8, 8, 18};
 
         for (int i = 0; i < 5; i++){
             const double sigma = sigmas[i];
-            const int windowsize = std::max((int)(sigma*3), (int)8); //we use 8 to trigger the special gaussian blur when possible
+            const int windowsize = windowsizes[i];
             indices[i+1] = indices[i]+4*windowsize+3;
             loadGaussianKernel(staging_buffer+indices[i], staging_buffer+indices[i]+2*windowsize+1, windowsize, sigma);
         }
@@ -51,7 +52,7 @@ public:
     }
 };
 
-void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
+/*void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
     const int gaussiansize = gaussianHandle.getWindow(i);
     VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
     VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
@@ -80,7 +81,7 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         {temp, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
     });
-}
+}*/
 
 void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
     const int gaussiansize = gaussianHandle.getWindow(i);
@@ -129,7 +130,7 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         });
     }
 }
-void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
+/*void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
     const int gaussiansize = gaussianHandle.getWindow(i);
     VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
     VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
@@ -149,7 +150,7 @@ void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
         {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
     });
-}
+}*/
 
 //all gaussian sigmas:
 /*

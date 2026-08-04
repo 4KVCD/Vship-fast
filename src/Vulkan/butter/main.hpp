@@ -39,8 +39,8 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
     VkDeviceAddress uhf2[3] = {mem_d+sizeof(float)*21*width*height, mem_d+sizeof(float)*22*width*height};
 
     //to XYB
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, temp, width, height, gaussianHandle, intensity_multiplier);
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, temp, width, height, gaussianHandle, intensity_multiplier);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, temp, lf1, width, height, gaussianHandle, intensity_multiplier);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, temp, lf2, width, height, gaussianHandle, intensity_multiplier);
 
     placeSeparateFrequencies(deviceHelper, cmdBuff, src1_d, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
     placeSeparateFrequencies(deviceHelper, cmdBuff, src2_d, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);

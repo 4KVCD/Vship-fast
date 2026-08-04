@@ -1,12 +1,12 @@
 namespace butter{
 
-void placeOpsinDynamicsImage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src[3], VkDeviceAddress temp[3], uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, float intensity_multiplier){
+void placeOpsinDynamicsImage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src[3], VkDeviceAddress temp[3], VkDeviceAddress temp2[3], uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, float intensity_multiplier){
     //change src from SRGB to opsin dynamic XYB
     int64_t th_x = 256;
     int64_t bl_x = (width*height-1)/th_x + 1;
     //printf("initial adress: %llu\n", (unsigned long long)src[0].mem_d);
     for (int i = 0; i < 3; i++){
-        placeBlurDstNoTemp(deviceHelper, cmdBuff, temp[i], src[i], width, height, gaussianHandle, 0);
+        placeBlur(deviceHelper, cmdBuff, temp[i], src[i], temp2[i], width, height, gaussianHandle, 0);
     }
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["colorsButter.spv:opsinDynamicsImage"];

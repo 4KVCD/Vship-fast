@@ -54,7 +54,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
     {"colorsButter.spv", {"opsinDynamicsImage"}},
     {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff"}},
-    {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit", "diffPrecompute"}},
+    {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit"}},
     {"combineMasksButter.spv", {"computeDiffmap"}},
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
     {"separateFrequenciesButter.spv", {

@@ -1,27 +1,19 @@
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void diffPrecompute(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* mem1, uniform float* dst, uniform  uint64_t width, uniform uint64_t height, uniform float mul, uniform float bias_arg){
-    uint64_t thx = threadIdx.x + blockIdx.x*256;
-    //int64_t x = thx%width;
-    uint64_t y = thx/width;
-
-    if (y >= height) return;
-
-    float bias = mul*bias_arg;
-    dst[thx] = sqrt(mul * abs(mem1[thx]) + bias) - sqrt(bias);
-    //if (thx == 10000) printf("diffprecompute : %f from %f\n", dst[thx], mem1[thx]);
-}
-
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void maskinit(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* hfx, uniform float* uhfx, uniform float* hfy, uniform float* uhfy, uniform float* dst, uniform uint64_t width, uniform float a, uniform float b, uniform float c){
+void maskinit(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* hfx, uniform float* uhfx, uniform float* hfy, uniform float* uhfy, uniform uint64_t width, uniform float a, uniform float b, uniform float c){
     uint64_t x = threadIdx.x + blockIdx.x*256;
 
     if (x >= width) return;
 
     float xdiff = (uhfx[x]+hfx[x])*a;
     float ydiff = uhfy[x]*b + hfy[x]*c;
-    dst[x] = sqrt(xdiff*xdiff + ydiff*ydiff);
+    float res = sqrt(xdiff*xdiff + ydiff*ydiff);
+
+    const float mul = 6.19424080439f;
+    const float bias_arg = 12.61050594197f;
+    const float bias = mul*bias_arg;
+    res = sqrt(mul * abs(res) + bias) - sqrt(bias);
+    hfx[x] = res;
     //if (x == 10000) printf("maskxyb : %f from hfx %f, uhfx %f, hfy %f, uhfy %f\n", dst[x], hfx[x], uhfx[x], hfy[x], uhfy[x]);
 }
 
