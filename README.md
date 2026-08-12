@@ -188,6 +188,10 @@ while preserving a high degree of accuracy.
 Special thanks to dnjulek for the Zig-based SSIMULACRA2 implementation in
 [vszip](https://github.com/dnjulek/vapoursynth-zip).
 
+## Support:
+
+[donation on buymeacoffee.com](https://buymeacoffee.com/linefr)
+
 ## License
 
 This project is licensed under the MIT license. License information is provided
