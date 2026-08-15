@@ -10,18 +10,6 @@ __device__ __host__ float2 inline operator*(const float2& a, const float& b){
     return {a.x*b, a.y*b};
 }
 
-__device__ __host__ float2 inline operator/(const float2& a, const float& b){
-    return {a.x/b, a.y/b};
-}
-
-__device__ __host__ float2 inline abs(const float2& a){
-    return {abs(a.x), abs(a.y)};
-}
-
-__device__ __host__ float2 inline sqrtf(const float2& a){
-    return {sqrtf(a.x), sqrtf(a.y)};
-}
-
 __device__ __host__ float2 inline min(const float2& a, const float& b){
     return {min(a.x, b), min(a.y, b)};
 }
