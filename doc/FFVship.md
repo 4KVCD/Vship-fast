@@ -158,7 +158,10 @@ This method is made to be able to retrieve per-frame scores from the computation
 
 Another different method to output scores. The path taken as an argument will hold a .svg image file containing a graph of the metric for each frame.
 
-For CVVDP, a numerically unstable algorithm is used to reverse the temporal score pooling and retrieve a per frame score.
+The graph is 1920x1080 and holds at most one column per horizontal pixel, so the file stays small and renderable whatever the frame count. On a longer clip a column covers several frames and is drawn as a min/max band with the mean on top, the graph header telling how many frames a column covers.
+
+For CVVDP, the temporal pooling is reversed to get a per frame score. On long clips single frame differences of that reversal are dominated by the precision of the reported score, so a column shows the score pooled over the frames it covers instead.
+
 --svg may be used alongside normal output (or --live-score-output) or even --json without issue.
 
 An example of such graph can be seen here:
