@@ -1178,7 +1178,7 @@ int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& s
         scores[0] = JOD(std::sqrt(scores[0]));
     }
     //if we get too many scores, the svg will just appear empty, we need to downsample to around X scores
-    constexpr int maxScores = 5000;
+    constexpr int maxScores = 1000;
     if (scores.size() > maxScores){
         std::vector<double> downsampled_scores(maxScores);
         float ratio = (float)scores.size()/(float)maxScores;
