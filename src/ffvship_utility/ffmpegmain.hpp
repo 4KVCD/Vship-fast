@@ -1177,7 +1177,24 @@ int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& s
         }
         scores[0] = JOD(std::sqrt(scores[0]));
     }
-    for (int64_t i = 0; i < source_scores.size(); i++){
+    //if we get too many scores, the svg will just appear empty, we need to downsample to around X scores
+    constexpr int maxScores = 5000;
+    if (scores.size() > maxScores){
+        std::vector<double> downsampled_scores(maxScores);
+        float ratio = (float)scores.size()/(float)maxScores;
+        for (int i = 0; i < maxScores; i++){
+            float interpolated_score = 0;
+            int num = 0;
+            for (int j = (int)(i*ratio); j < std::min((int)scores.size(), (int)((i+1)*ratio)); j++){
+                interpolated_score += scores[j];
+                num++;
+            }
+            interpolated_score /= num;
+            downsampled_scores[i] = interpolated_score;
+        }
+        scores = std::move(downsampled_scores);
+    }
+    for (int64_t i = 0; i < scores.size(); i++){
         max_value = std::max(max_value, (float)scores[i]);
         min_value = std::min(min_value, (float)scores[i]);
     }
@@ -1190,12 +1207,15 @@ int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& s
     const int svg_length = length + padding * 2;
     const int svg_height = height + padding * 2;
 
+    int source_nbr_scores = 0;
     int nbr_scores = 0;
     switch (cli_args.metric) {
         case MetricType::Butteraugli:
+            source_nbr_scores = source_scores.size() / 3;
             nbr_scores = scores.size() / 3;
             break;
         default:
+            source_nbr_scores = source_scores.size();
             nbr_scores = scores.size();
             break;
     }
@@ -1280,7 +1300,7 @@ int write_to_svg(const CommandLineOptions cli_args, const std::vector<double>& s
                 << "\" stroke=\"#000000\" stroke-opacity=\"1\" stroke-width=\"2\" "
                    "stroke-linecap=\"butt\" opacity=\"0.2\" />";
 
-        const int frame_nbr = static_cast<int>(i_float / static_cast<float>(nbr_column-1) * static_cast<float>(nbr_scores)) * cli_args.every_nth_frame;
+        const int frame_nbr = static_cast<int>(i_float / static_cast<float>(nbr_column-1) * static_cast<float>(source_nbr_scores)) * cli_args.every_nth_frame;
         // x-coordinate texts (frame number)
         svgfile << "<text x=\"" << x << "\" y=\"" << height + 10
                 << "\" dx=\"0\" dy=\"0\" textLength=\"none\" "
