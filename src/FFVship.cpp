@@ -379,6 +379,9 @@ int main(int argc, char **argv) {
     start = std::max(-encoded_offset, start);
     end = start+std::min(v2.reader->total_frame_count-(start+encoded_offset), end-start);
 
+    cli_args.start_frame = start;
+    cli_args.end_frame = end;
+
     if (end < start){
         std::cerr << "encoded_offset " << encoded_offset << " does not allow comparing both videos" << std::endl;
         return 1;
