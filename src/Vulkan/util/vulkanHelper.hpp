@@ -119,7 +119,7 @@ QueueFamily findQueueFamilies(const VkPhysicalDevice& device) {
     uint32_t condition = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
     for (const auto& queueFamily : queueFamilies) {
         //std::cout << queueFamily.queueCount << std::endl;
-        if ((queueFamily.queueFlags & condition == condition) && queueFamily.queueCount > max_queueCount) {
+        if (((queueFamily.queueFlags & condition) == condition) && queueFamily.queueCount > max_queueCount) {
             out.indices = i;
             out.maxHWQueueCount = queueFamily.queueCount;
             max_queueCount = queueFamily.queueCount;
