@@ -119,6 +119,7 @@ usage: ./FFVship [-h] [--source SOURCE] [--encoded ENCODED]
 ```
 
 FFVship allows to get image output for your metric computations like this:
+
 <img src="/attachments/21abb35e-6c15-4631-8164-0de5ee79627d" alt="drawing" width="200"/>
 
 more details may be found in the [doc](doc/FFVship.md)
