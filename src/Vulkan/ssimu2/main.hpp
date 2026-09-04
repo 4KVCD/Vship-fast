@@ -107,7 +107,7 @@ class SSIMU2ComputingImplementation{
     float* outputCPU;
 public:
     void init(Vship_Colorspace_t source_colorspace, Vship_Colorspace_t source_colorspace2, int gpu_id){
-        this->deviceHelper = globalVulkanInstance.get(gpu_id);
+        this->deviceHelper = getGlobalVulkanInstance().get(gpu_id);
         commandPool = deviceHelper->device.createCmdPool(3, 0);
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
         this->width = VshipColorConvert::getColorspaceWidth(source_colorspace);
