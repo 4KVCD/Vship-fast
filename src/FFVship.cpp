@@ -40,7 +40,7 @@ extern "C" {
 #define VSHIP_VERSION_MINOR 1
 #endif
 #ifndef VSHIP_VERSION_MINORMINOR
-#define VSHIP_VERSION_MINORMINOR 1
+#define VSHIP_VERSION_MINORMINOR 2
 #endif
 
 using score_tuple_t = std::tuple<double, double, double>;
