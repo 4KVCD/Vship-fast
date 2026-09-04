@@ -3,8 +3,6 @@
 An easy to use high-performance Library for GPU-accelerated visual fidelity
 metrics with SSIMULACRA2, Butteraugli & CVVDP.
 
-This project has been 100% made by a **human** (no AI involved).
-
 ## Overview
 
 `vship` provides hardware-accelerated implementations of:
@@ -118,6 +116,10 @@ usage: ./FFVship [-h] [--source SOURCE] [--encoded ENCODED]
                     [--list-gpu]
 ```
 
+FFVship allows to get image output for your metric computations like this:
+
+<img src="/attachments/21abb35e-6c15-4631-8164-0de5ee79627d" alt="drawing" width="200"/>
+
 more details may be found in the [doc](doc/FFVship.md)
 
 ### Vapoursynth
@@ -184,6 +186,10 @@ while preserving a high degree of accuracy.
   [gfxdisp/ColorVideoVDP](https://github.com/gfxdisp/ColorVideoVDP/tree/main?tab=readme-ov-file)
 
 ## Credits
+
+This project has been 100% made by a **human** (me) and is maintained by myself.
+AI issues and PR will be reviewed if they appear reasonable and that I feel condident about the maintainability.
+(I hate AI, but improving vship is more important than my beliefs)
 
 Special thanks to dnjulek for the Zig-based SSIMULACRA2 implementation in
 [vszip](https://github.com/dnjulek/vapoursynth-zip).

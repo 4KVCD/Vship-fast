@@ -171,7 +171,7 @@ public:
     int64_t resize_width = 0;
     int64_t resize_height = 0;
     void init(Vship_Colorspace_t source_colorspace, Vship_Colorspace_t source_colorspace2, int gpu_id, float fps, bool resizeToDisplay, std::string model_key, std::string model_config_json){
-        deviceHelper = globalVulkanInstance.get(gpu_id);
+        deviceHelper = getGlobalVulkanInstance().get(gpu_id);
         model = new DisplayModel(model_key, model_config_json);
         this->fps = fps;
         ref_colorspace = source_colorspace;

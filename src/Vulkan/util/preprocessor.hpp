@@ -20,7 +20,10 @@
 
 //Our vulkanHelper will be used here using a global instance
 #include "vulkanDeviceManager.hpp"
-VkDeviceManagerList globalVulkanInstance; //used for the whole library
+inline VkDeviceManagerList& getGlobalVulkanInstance() {
+    static VkDeviceManagerList instance;
+    return instance;
+} //used for the whole library
 
 using uint = unsigned int;
 

@@ -174,7 +174,7 @@ class ButterComputingImplementation{
 public:
     //Qnorm replace the old norm2 and allows getting really any norm wanted
     void init(Vship_Colorspace_t source_colorspace, Vship_Colorspace_t source_colorspace2, int gpu_id, int Qnorm, float intensity_multiplier){
-        this->deviceHelper = globalVulkanInstance.get(gpu_id);
+        this->deviceHelper = getGlobalVulkanInstance().get(gpu_id);
         this->Qnorm = Qnorm;
         this->intensity_multiplier = intensity_multiplier;
         commandPool = deviceHelper->device.createCmdPool(4, 0);
