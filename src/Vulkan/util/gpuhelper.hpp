@@ -27,7 +27,7 @@
 namespace helper{
 
     int checkGpuCount(){
-        int count = globalVulkanInstance.getGpuCount();
+        int count = getGlobalVulkanInstance().getGpuCount();
         if (count == 0){
             throw VshipError(NoDeviceDetected, __FILE__, __LINE__);
         }
@@ -76,7 +76,7 @@ namespace helper{
     }
 
     void gpuFullCheck(int gpuid = 0){
-        VshipDeviceHelper* deviceHelper = globalVulkanInstance.get(gpuid);
+        VshipDeviceHelper* deviceHelper = getGlobalVulkanInstance().get(gpuid);
         if (!gpuKernelCheck(deviceHelper)){
             throw VshipError(BadDeviceCode, __FILE__, __LINE__);
         }
@@ -88,7 +88,7 @@ namespace helper{
         
         InternalDeviceInfo deviceInfo;
         for (int i = 0; i < count; i++){
-            globalVulkanInstance.getDeviceInfo(&deviceInfo, i);
+            getGlobalVulkanInstance().getDeviceInfo(&deviceInfo, i);
             ss << "GPU " << i << ": " << deviceInfo.name << std::endl;
         }
         return ss.str();

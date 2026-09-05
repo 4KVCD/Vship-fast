@@ -35,7 +35,7 @@ static void VS_CC GpuInfo(const VSMap *in, VSMap *out, void *userData, VSCore * 
         //no gpu_id was selected
         for (int i = 0; i < count; i++){
             try{
-                globalVulkanInstance.getDeviceInfo(&devattr, i);
+                getGlobalVulkanInstance().getDeviceInfo(&devattr, i);
             } catch (const VshipError& e){
                 vsapi->mapSetError(out, e.getErrorMessage().c_str());
                 return;
@@ -45,8 +45,8 @@ static void VS_CC GpuInfo(const VSMap *in, VSMap *out, void *userData, VSCore * 
     } else {
         int passgpuCheck;
         try{
-            globalVulkanInstance.getDeviceInfo(&devattr, gpuid);
-            VshipDeviceHelper* deviceHelper = globalVulkanInstance.get(gpuid);
+            getGlobalVulkanInstance().getDeviceInfo(&devattr, gpuid);
+            VshipDeviceHelper* deviceHelper = getGlobalVulkanInstance().get(gpuid);
             passgpuCheck = (int)helper::gpuKernelCheck(deviceHelper);
         } catch (const VshipError& e){
             vsapi->mapSetError(out, e.getErrorMessage().c_str());
@@ -71,7 +71,7 @@ void Vship_GetDeviceInfoImpl(Vship_DeviceInfo* device_info, int gpu_id){
         throw VshipError(BadDeviceArgument, __FILE__, __LINE__, "while using Vship_GetDeviceInfo");
     }
     InternalDeviceInfo devattr;
-    globalVulkanInstance.getDeviceInfo(&devattr, gpu_id);
+    getGlobalVulkanInstance().getDeviceInfo(&devattr, gpu_id);
     memcpy(device_info->name, devattr.name, 256); //256 char to copy
     //device_info->VRAMSize = devattr.totalGlobalMem;
     device_info->integrated = devattr.integrated;
@@ -82,7 +82,7 @@ void Vship_GetDeviceInfoImpl(Vship_DeviceInfo* device_info, int gpu_id){
 
 void Vship_PinnedMallocImpl(void** ptr, uint64_t size, int gpu_id){
     try{
-        *ptr = globalVulkanInstance.get(gpu_id)->device.mallocHost(size);
+        *ptr = getGlobalVulkanInstance().get(gpu_id)->device.mallocHost(size);
     } catch(std::runtime_error& e){
         throw VshipError(OutOfRAM, __FILE__, __LINE__, e.what());
     }
@@ -90,7 +90,7 @@ void Vship_PinnedMallocImpl(void** ptr, uint64_t size, int gpu_id){
 
 void Vship_PinnedFreeImpl(void* ptr, int gpu_id){
     try{
-        globalVulkanInstance.get(gpu_id)->device.freeHost(ptr);
+        getGlobalVulkanInstance().get(gpu_id)->device.freeHost(ptr);
     } catch(std::runtime_error& e){
         throw VshipError(BadPointer, __FILE__, __LINE__, e.what());
     }
