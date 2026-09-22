@@ -11,7 +11,7 @@
 #include <map>
 #include <mutex>
 
-#ifndef SKIPLOGICOP
+#ifdef SKIPLOGICOP
 constexpr bool skipLogicOp = true;
 #else
 constexpr bool skipLogicOp = false;
