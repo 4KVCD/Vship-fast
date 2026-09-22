@@ -71,7 +71,7 @@ Vship_Version Vship_GetVersion(){
     return res;
 }
 
-Vship_Exception Vship_GetDeviceCount(int* number){
+Vship_Exception Vship_GetDeviceCount(int* number) {
     int count;
     try{
         count = helper::checkGpuCount();

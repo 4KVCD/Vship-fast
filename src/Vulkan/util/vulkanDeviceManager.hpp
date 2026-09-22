@@ -4,7 +4,12 @@
 #include <mutex>
 #include <string>
 #include <filesystem>
+
+#include "../../util/VshipExceptions.hpp"
+#define THROW_ERROR(STRING) throw VshipError(HIPError, __FILE__, __LINE__, STRING);
 #include "vulkanHelper.hpp"
+#undef THROW_ERROR
+
 #include "../../util/VshipExceptions.hpp"
 #include <unordered_map>
 

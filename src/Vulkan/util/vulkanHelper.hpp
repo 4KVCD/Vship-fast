@@ -21,10 +21,18 @@ constexpr bool fp16Support = false;
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.h>
 
+#ifndef THROW_ERROR
+#define THROW_ERROR(STRING) throw std::runtime_error(STRING)
+#endif
+
 using uint = unsigned int;
 
 std::vector<const char*> required_extensions = {
-    
+
+#if __APPLE__
+    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+#endif
+
 };
 
 const std::vector<const char*> validationLayers = {
@@ -317,14 +325,14 @@ bool isDeviceSuitable(const VkPhysicalDevice& device) {
 
 void beginCmdBuffer(VkCommandBuffer cmdbuff){
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    if (vkBeginCommandBuffer(cmdbuff, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to End Command Buffer");
+    if (vkBeginCommandBuffer(cmdbuff, &beginInfo) != VK_SUCCESS) THROW_ERROR("Failed to End Command Buffer");
 }
 void endCmdBuffer(VkCommandBuffer cmdbuff){
-    if (vkEndCommandBuffer(cmdbuff) != VK_SUCCESS) throw std::runtime_error("Failed to End Command Buffer");
+    if (vkEndCommandBuffer(cmdbuff) != VK_SUCCESS) THROW_ERROR("Failed to End Command Buffer");
 }
 
 void resetCmdBuffer(VkCommandBuffer cmdbuff){
-    if (vkResetCommandBuffer(cmdbuff, 0) != VK_SUCCESS) throw std::runtime_error("Failed to reset Command Buffer");
+    if (vkResetCommandBuffer(cmdbuff, 0) != VK_SUCCESS) THROW_ERROR("Failed to reset Command Buffer");
 }
 
 class VkCommandPoolManager{
@@ -339,7 +347,7 @@ public:
         poolInfo.queueFamilyIndex = queueFamily.indices.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Optional
         if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("echec de la création d'une command pool!");
+            THROW_ERROR("echec de la création d'une command pool!");
         }
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -349,7 +357,7 @@ public:
             allocInfo.commandBufferCount = bufferNbPrimary;
             primaryCommandBuffers.resize(bufferNbPrimary);
             if (vkAllocateCommandBuffers(device, &allocInfo, primaryCommandBuffers.data()) != VK_SUCCESS) {
-                throw std::runtime_error("echec de l'allocation de command buffers!");
+                THROW_ERROR("echec de l'allocation de command buffers!");
             }
         }
         if (bufferNbSecondary != 0){
@@ -357,7 +365,7 @@ public:
             allocInfo.commandBufferCount = bufferNbSecondary;
             secondaryCommandBuffers.resize(bufferNbSecondary);
             if (vkAllocateCommandBuffers(device, &allocInfo, secondaryCommandBuffers.data()) != VK_SUCCESS) {
-                throw std::runtime_error("echec de l'allocation de command buffers!");
+                THROW_ERROR("echec de l'allocation de command buffers!");
             }
         }
     }
@@ -375,16 +383,16 @@ public:
         createInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         createInfo.pNext = NULL;
         createInfo.flags = 0;
-        if (vkCreateFence(device, &createInfo, nullptr, &fence) != VK_SUCCESS) throw std::runtime_error("Failed to Create Fence");
+        if (vkCreateFence(device, &createInfo, nullptr, &fence) != VK_SUCCESS) THROW_ERROR("Failed to Create Fence");
     }
     //reset the fence right after
     void synchronize(){
-        if (vkWaitForFences(device, 1, &fence, true, UINT64_MAX) != VK_SUCCESS) throw std::runtime_error("Failed to synchronize to Fence");
-        if (vkResetFences(device, 1, &fence) != VK_SUCCESS) throw std::runtime_error("Failed to reset Fence");
+        if (vkWaitForFences(device, 1, &fence, true, UINT64_MAX) != VK_SUCCESS) THROW_ERROR("Failed to synchronize to Fence");
+        if (vkResetFences(device, 1, &fence) != VK_SUCCESS) THROW_ERROR("Failed to reset Fence");
     }
     bool getStatus(){
         VkResult res = vkGetFenceStatus(device, fence);
-        if (res == VK_ERROR_DEVICE_LOST) throw std::runtime_error("device lost while getting fence status");
+        if (res == VK_ERROR_DEVICE_LOST) THROW_ERROR("device lost while getting fence status");
         return (res == VK_SUCCESS);
     }
     ~FenceManager(){
@@ -420,7 +428,7 @@ class VkDeviceManager{
         data.buffer = buffer;
         data.pNext = NULL;
         res = vkGetBufferDeviceAddress(device, &data);
-        if (res == 0) throw std::runtime_error("Adress of Buffer is NULL!");
+        if (res == 0) THROW_ERROR("Adress of Buffer is NULL!");
         return res;
     }
     void createLogicalDevice(VkPhysicalDevice& physicalDevice){
@@ -441,7 +449,7 @@ class VkDeviceManager{
         createInfo.pEnabledFeatures = nullptr;
 
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create logical device!");
+            THROW_ERROR("failed to create logical device!");
         }
         deviceQueues.resize(queueFamily.maxHWQueueCount);
         for (int i = 0; i < queueFamily.maxHWQueueCount; i++){
@@ -455,7 +463,7 @@ class VkDeviceManager{
         createInfo.physicalDevice = physicalDevice;
         createInfo.device = device;
         createInfo.instance = instance;
-        if (vmaCreateAllocator(&createInfo, &vmaAllocator) != VK_SUCCESS) throw std::runtime_error("Failed to initialize VmaAllocator");
+        if (vmaCreateAllocator(&createInfo, &vmaAllocator) != VK_SUCCESS) THROW_ERROR("Failed to initialize VmaAllocator");
     }
     void initPipelineLayout(){
         VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -472,7 +480,7 @@ class VkDeviceManager{
         pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
         pipelineLayoutCreateInfo.pPushConstantRanges = &constantRangeInfo;
         if (vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout) != VK_SUCCESS){
-            throw std::runtime_error("Failed to create Pipeline Layout");
+            THROW_ERROR("Failed to create Pipeline Layout");
         }
     }
     std::pair<VkDeviceAddress, VmaAllocation> malloc(size_t size, VkBufferUsageFlags bufferFlags, VmaMemoryUsage vmaAllocationUsage, VkMemoryPropertyFlags allocationFlags, VmaAllocationCreateFlags allocInfoFlags){
@@ -488,7 +496,7 @@ class VkDeviceManager{
  
         VkBuffer buffer;
         VmaAllocation allocation;
-        if (vmaCreateBuffer(vmaAllocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS) throw std::runtime_error("Failed to Allocate Memory");
+        if (vmaCreateBuffer(vmaAllocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr) != VK_SUCCESS) THROW_ERROR("Failed to Allocate Memory");
         VkDeviceAddress address = getBufferDevicePointer(buffer);
         allocatorPerAddressLock.lock();
         allocatorPerAdress.emplace(address, std::make_pair(allocation, buffer));
@@ -501,7 +509,7 @@ class VkDeviceManager{
         auto it = allocatorPerAdress.lower_bound(address);
         if (it == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto res = it->second.second;
         allocatorPerAddressLock.unlock();
@@ -523,7 +531,7 @@ public:
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
-            throw std::runtime_error("Could not open Shader file");
+            THROW_ERROR("Could not open Shader file");
         }
 
         size_t fileSize = (size_t) file.tellg();
@@ -545,7 +553,7 @@ public:
 
         VkShaderModule shaderModule;
         if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create shader module!");
+            THROW_ERROR("failed to create shader module!");
         }
         return shaderModule;
     }
@@ -564,7 +572,7 @@ public:
         VkPipeline pipeline = VK_NULL_HANDLE;
         VkResult err = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &pipeline);
         if (err != VK_SUCCESS){
-            throw std::runtime_error("Error " + std::to_string(err) + " while creating compute pipeline");
+            THROW_ERROR("Error " + std::to_string(err) + " while creating compute pipeline");
         }
         return pipeline;
     }
@@ -589,7 +597,7 @@ public:
         allocatorPerAddressLock.lock();
         if (allocatorPerAdress.find(address) == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("Device free an address that isnt allocated");
+            THROW_ERROR("Device free an address that isnt allocated");
         }
         auto [allocation, buffer] = allocatorPerAdress[address];
         allocatorPerAdress.erase(address);
@@ -613,13 +621,13 @@ public:
         auto it = hostMapToInfo.lower_bound(ptr);
         if (it == hostMapToInfo.end()) {
             hostMapToInfoLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto [allocationPtr, data] = *it;
         hostMapToInfoLock.unlock();
         auto [address, size] = data;
         //we have (allocationPtr <= ptr)
-        if ((uint8_t*)allocationPtr+size <= (uint8_t*)ptr) throw std::runtime_error("unmapped pointer");
+        if ((uint8_t*)allocationPtr+size <= (uint8_t*)ptr) THROW_ERROR("unmapped pointer");
         return address+((uint8_t*)ptr - (uint8_t*)allocationPtr);
     }
     //must be the exact ptr
@@ -627,7 +635,7 @@ public:
         hostMapToInfoLock.lock();
         if (hostMapToInfo.find(ptr) == hostMapToInfo.end()) {
             hostMapToInfoLock.unlock();
-            throw std::runtime_error("Freeing a ptr that wasnt allocated");
+            THROW_ERROR("Freeing a ptr that wasnt allocated");
         }
         auto [address, size] = hostMapToInfo[ptr];
         hostMapToInfo.erase(ptr);
@@ -647,7 +655,7 @@ public:
         auto itSrc = hostMapToInfo.lower_bound(src);
         if (itSrc == hostMapToInfo.end()) {
             hostMapToInfoLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto [allocationPtrSrc, deviceAddressSrc] = *itSrc;
         hostMapToInfoLock.unlock();
@@ -655,7 +663,7 @@ public:
         auto itDst = allocatorPerAdress.lower_bound(dst);
         if (itDst == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto bufferSrc = allocatorPerAdress[deviceAddressSrc.first].second;
         allocatorPerAddressLock.unlock();
@@ -673,7 +681,7 @@ public:
         auto itDst = hostMapToInfo.lower_bound(dst);
         if (itDst == hostMapToInfo.end()) {
             hostMapToInfoLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto [allocationPtrDst, deviceAddressDst] = *itDst;
         hostMapToInfoLock.unlock();
@@ -681,7 +689,7 @@ public:
         auto itSrc = allocatorPerAdress.lower_bound(src);
         if (itSrc == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto& bufferDst = allocatorPerAdress[deviceAddressDst.first].second;
         auto& [allocationAddressSrc, bufferAndAllocatorSrc] = *itSrc;
@@ -699,12 +707,12 @@ public:
         auto itDst = allocatorPerAdress.lower_bound(dst);
         if (itDst == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto itSrc = allocatorPerAdress.lower_bound(src);
         if (itSrc == allocatorPerAdress.end()) {
             allocatorPerAddressLock.unlock();
-            throw std::runtime_error("unmapped pointer");
+            THROW_ERROR("unmapped pointer");
         }
         auto [allocationAddressDst, bufferAndAllocatorDst] = *itDst;
         auto [allocationAddressSrc, bufferAndAllocatorSrc] = *itSrc;
@@ -729,7 +737,7 @@ public:
             auto it = allocatorPerAdress.lower_bound(address);
             if (it == allocatorPerAdress.end()) {
                 allocatorPerAddressLock.unlock();
-                throw std::runtime_error("unmapped pointer");
+                THROW_ERROR("unmapped pointer");
             }
             auto [allocationAddress, bufferAndAllocator] = *it;
             allocatorPerAddressLock.unlock();
@@ -772,7 +780,7 @@ public:
     VkSemaphore createSemaphores(){
         VkSemaphore res;
         VkSemaphoreCreateInfo createInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        if (vkCreateSemaphore(device, &createInfo, nullptr, &res) != VK_SUCCESS) throw std::runtime_error("Failed to create semaphore");
+        if (vkCreateSemaphore(device, &createInfo, nullptr, &res) != VK_SUCCESS) THROW_ERROR("Failed to create semaphore");
         return res;
     }
     void destroySemaphores(VkSemaphore a){
@@ -802,7 +810,7 @@ public:
         queueLocks[myQueueID].lock();
         if (vkQueueSubmit2(deviceQueues[myQueueID], 1, &createInfo, fence->fence) != VK_SUCCESS) {
             queueLocks[myQueueID].unlock();
-            throw std::runtime_error("Failed to Submit commandBuffer to queue");
+            THROW_ERROR("Failed to Submit commandBuffer to queue");
         }
         queueLocks[myQueueID].unlock();
     }
@@ -846,7 +854,7 @@ public:
         queueLocks[myQueueID].lock();
         if (vkQueueSubmit2(deviceQueues[myQueueID], numBuff, createInfos.data(), fence->fence) != VK_SUCCESS) {
             queueLocks[myQueueID].unlock();
-            throw std::runtime_error("Failed to Submit commandBuffer to queue");
+            THROW_ERROR("Failed to Submit commandBuffer to queue");
         }
         queueLocks[myQueueID].unlock();
     }
@@ -890,6 +898,10 @@ class VkManager{
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
 
+#if __APPLE__
+        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
+
         //manage extensions
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
         if (enableValidationLayers) {
@@ -908,7 +920,7 @@ class VkManager{
         createInfo.ppEnabledExtensionNames = required_extensions.data();
 
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create vulkan instance!");
+            THROW_ERROR("failed to create vulkan instance!");
         }
     }
     void setupDebugMessenger() {
@@ -916,13 +928,13 @@ class VkManager{
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
         populateDebugMessengerCreateInfo(createInfo);
         if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-            throw std::runtime_error("failed to set up debug messenger!");
+            THROW_ERROR("failed to set up debug messenger!");
         }
     }
 public:
     VkInstance instance;
     VkManager(){
-        if (enableValidationLayers && !checkValidationLayerSupport())throw std::runtime_error("Validation Layer Not Supported");
+        if (enableValidationLayers && !checkValidationLayerSupport())THROW_ERROR("Validation Layer Not Supported");
         initInstance();
         setupDebugMessenger();
     }
@@ -932,7 +944,7 @@ public:
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
         if (deviceCount == 0) {
             return {};
-            //throw std::runtime_error("failed to find GPUs with Vulkan support!");
+            //THROW_ERROR("failed to find GPUs with Vulkan support!");
         }
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
