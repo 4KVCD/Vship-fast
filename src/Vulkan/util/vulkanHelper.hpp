@@ -11,6 +11,12 @@
 #include <map>
 #include <mutex>
 
+#ifndef SKIPLOGICOP
+constexpr bool skipLogicOp = true;
+#else
+constexpr bool skipLogicOp = false;
+#endif
+
 #ifdef FP16SUPPORT
 constexpr bool fp16Support = true;
 #else
@@ -30,7 +36,8 @@ using uint = unsigned int;
 std::vector<const char*> required_extensions = {
 
 #if __APPLE__
-    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+    MVK_USE_METAL_PRIVATE_API
 #endif
 
 };
@@ -150,7 +157,7 @@ VkPhysicalDeviceFeatures requiredFeaturesBasic = {
     false, //tessellationShader
     false, //sampleRateShading
     false, //dualSrcBlend
-    true, //logicOp
+    !skipLogicOp, //logicOp
     false, //multiDrawIndirect
     false, //drawIndirectFirstInstance
     false, //depthClamp
@@ -303,7 +310,7 @@ bool isDeviceSuitable(const VkPhysicalDevice& device) {
     //if (!deviceFeatures.features.shaderFloat64) return false;
     if (!deviceFeatures.features.shaderInt64) return false;
     if (!deviceFeatures.features.shaderInt16) return false;
-    if (!deviceFeatures.features.logicOp) return false;
+    if (!skipLogicOp && !deviceFeatures.features.logicOp) return false;
     //extension 3
     if (!extension3.synchronization2) return false;
     //extension 2
