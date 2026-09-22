@@ -36,8 +36,7 @@ using uint = unsigned int;
 std::vector<const char*> required_extensions = {
 
 #if __APPLE__
-    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
-    MVK_USE_METAL_PRIVATE_API
+    VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
 #endif
 
 };
