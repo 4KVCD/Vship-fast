@@ -92,7 +92,7 @@ typedef struct Vship_VulkanFeatureMatrix{
     bool bufferDeviceAddress;
     bool shaderStorageBufferArrayDynamicIndexing;
     bool synchronization2;
-    bool logicOp;
+    bool logicOp; //not required
     bool FutureFeatures[10]; //reserved for future use
 } Vship_VulkanFeatureMatrix;
 

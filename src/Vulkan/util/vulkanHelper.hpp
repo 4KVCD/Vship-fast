@@ -11,12 +11,6 @@
 #include <map>
 #include <mutex>
 
-#ifdef SKIPLOGICOP
-constexpr bool skipLogicOp = true;
-#else
-constexpr bool skipLogicOp = false;
-#endif
-
 #ifdef FP16SUPPORT
 constexpr bool fp16Support = true;
 #else
@@ -156,7 +150,7 @@ VkPhysicalDeviceFeatures requiredFeaturesBasic = {
     false, //tessellationShader
     false, //sampleRateShading
     false, //dualSrcBlend
-    !skipLogicOp, //logicOp
+    false, //logicOp
     false, //multiDrawIndirect
     false, //drawIndirectFirstInstance
     false, //depthClamp
@@ -309,7 +303,7 @@ bool isDeviceSuitable(const VkPhysicalDevice& device) {
     //if (!deviceFeatures.features.shaderFloat64) return false;
     if (!deviceFeatures.features.shaderInt64) return false;
     if (!deviceFeatures.features.shaderInt16) return false;
-    if (!skipLogicOp && !deviceFeatures.features.logicOp) return false;
+    //if (!deviceFeatures.features.logicOp) return false; //not required
     //extension 3
     if (!extension3.synchronization2) return false;
     //extension 2

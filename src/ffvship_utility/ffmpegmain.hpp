@@ -977,7 +977,7 @@ void printVulkanFeatureMatrix(Vship_VulkanFeatureMatrix& features){
     std::cout << "bufferDeviceAddress : " << features.bufferDeviceAddress << std::endl;
     std::cout << "shaderStorageBufferArrayDynamicIndexing : " << features.shaderStorageBufferArrayDynamicIndexing << std::endl;
     std::cout << "synchronization2 : " << features.synchronization2 << std::endl;
-    std::cout << "logicOp : " << features.logicOp << std::endl;
+    std::cout << "logicOp : " << features.logicOp << " (not required)" << std::endl;
 }
 
 struct CommandLineOptions {
