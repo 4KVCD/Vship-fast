@@ -610,7 +610,7 @@ public:
         try{
             (void)getHostMemoryDeviceAddress(ptr);
             return true;
-        } catch(std::runtime_error& e){
+        } catch(std::exception& e){
             return false;
         }
     }
