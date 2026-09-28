@@ -148,6 +148,42 @@ __global__ void bicubicVerticalTopUpscaleX2_Kernel(float* dst, float* src, int64
     }
 }
 
+//block y should range from 0 to smallheight INCLUDED
+//dst of size width*height while src is of size width*smallheight
+__global__ void bicubicVerticalCenterUpscaleX4_Kernel(float* dst, float* src, int64_t width, int64_t height){
+    const int64_t x = threadIdx.x + blockIdx.x * blockDim.x;
+    int64_t y = threadIdx.y + blockIdx.y * blockDim.y;
+    y--;
+    const int64_t smallheight = (height-1)/4+1;
+    CubicHermitSplineInterpolator interpolator = getVerticalInterpolator_device(src, x, y, width, smallheight);
+    //this interpolator is valid on interval [0, 1] representing [y, y+1]
+    //we are Center so we are interested in values: 0.25 and 0.75
+    if (x < width){
+        //if (x == 1638 && y == -1) printf("at place y = %lld, x = %lld we put : %f from %f %f %f, interpol 0: %f\n", 2*y+2, x, interpolator.get(0.75f), src[(y+1)*width+x], src[(y+2)*width+x], src[(y+3)*width+x], interpolator.get(0.f));
+        if (y != -1 && 4*y+2 < height) dst[(4*y +2)*width + x] = interpolator.get(0.125f);
+        if (y != -1 && 2*y+3 < height) dst[(4*y +3)*width + x] = interpolator.get(0.375f);
+        if (4*y+4 < height) dst[(4*y+4)*width + x] = interpolator.get(0.625f);
+        if (4*y+5 < height) dst[(4*y+5)*width + x] = interpolator.get(0.875f);
+    }
+}
+
+//block y should range from 0 to smallheight-1 INCLUDED
+//dst of size width*height while src is of size width*smallheight
+__global__ void bicubicVerticalTopUpscaleX4_Kernel(float* dst, float* src, int64_t width, int64_t height){
+    const int64_t x = threadIdx.x + blockIdx.x * blockDim.x;
+    const int64_t y = threadIdx.y + blockIdx.y * blockDim.y;
+    const int64_t smallheight = (height-1)/4+1;
+    CubicHermitSplineInterpolator interpolator = getVerticalInterpolator_device(src, x, y, width, smallheight);
+    //this interpolator is valid on interval [0, 1] representing [y, y+1]
+    //we are Top so we are interested in values: 0 and 0.5
+    if (x < width){
+        if (4*y < height) dst[(4*y)*width + x] = src[y*width + x];
+        if (4*y+1 < height) dst[(4*y+1)*width + x] = interpolator.get(0.25f);
+        if (4*y+2 < height) dst[(4*y+2)*width + x] = interpolator.get(0.5f);
+        if (4*y+3 < height) dst[(4*y+3)*width + x] = interpolator.get(0.75f);
+    }
+}
+
 //temp is of size 2 planes
 //source is of size width * height possibly chroma downsampled
 __host__ int inline upsample(float* temp, float* src[3], int64_t width, int64_t height, Vship_ChromaLocation_t location, Vship_ChromaSubsample_t subsampledata, hipStream_t stream){
@@ -223,6 +259,11 @@ __host__ int inline upsample(float* temp, float* src[3], int64_t width, int64_t 
                 GPU_CHECK(hipGetLastError());
                 bicubicVerticalTopUpscaleX2_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[2], temp+width*smallheight, width, height);
                 GPU_CHECK(hipGetLastError());
+            } else if (subh == 2){
+                bicubicVerticalTopUpscaleX4_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[1], temp, width, height);
+                GPU_CHECK(hipGetLastError());
+                bicubicVerticalTopUpscaleX4_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[2], temp+width*smallheight, width, height);
+                GPU_CHECK(hipGetLastError());
             } else {
                 return 1; //not implemented
             }
@@ -234,6 +275,11 @@ __host__ int inline upsample(float* temp, float* src[3], int64_t width, int64_t 
                 bicubicVerticalCenterUpscaleX2_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[1], temp, width, height);
                 GPU_CHECK(hipGetLastError());
                 bicubicVerticalCenterUpscaleX2_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[2], temp+width*smallheight, width, height);
+                GPU_CHECK(hipGetLastError());
+            } else if (subh == 2){
+                bicubicVerticalCenterUpscaleX4_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[1], temp, width, height);
+                GPU_CHECK(hipGetLastError());
+                bicubicVerticalCenterUpscaleX4_Kernel<<<dim3(blx, bly), dim3(thx, thy), 0, stream>>>(src[2], temp+width*smallheight, width, height);
                 GPU_CHECK(hipGetLastError());
             } else {
                 return 1; //not implemented

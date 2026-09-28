@@ -42,7 +42,9 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
         "bicubicHorizontalCenterUpscaleX4", 
         "bicubicHorizontalLeftUpscaleX4",
         "bicubicVerticalCenterUpscaleX2",
-        "bicubicVerticalTopUpscaleX2"
+        "bicubicVerticalTopUpscaleX2",
+        "bicubicVerticalCenterUpscaleX4",
+        "bicubicVerticalTopUpscaleX4"
         }
     },
     {"resize.spv", {"horizontalResizeTranspose"}},

@@ -94,6 +94,13 @@ int placeChromaUpsample(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
                 deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
                 fillKernelArguments(0, kernelArguments, (uint64_t)(src[2]), (uint64_t)temp+sizeof(float)*width*smallheight, (uint64_t)width, (uint64_t)height);
                 deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
+            } else if (subh == 2){
+                VkPipeline pipeline = deviceHelper->cachedPipeline["chromaUpsample.spv:bicubicVerticalTopUpscaleX4"];
+                uint8_t kernelArguments[128];
+                fillKernelArguments(0, kernelArguments, (uint64_t)src[1], (uint64_t)temp, (uint64_t)width, (uint64_t)height);
+                deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
+                fillKernelArguments(0, kernelArguments, (uint64_t)(src[2]), (uint64_t)temp+sizeof(float)*width*smallheight, (uint64_t)width, (uint64_t)height);
+                deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
             } else {
                 return 1; //not implemented
             }
@@ -103,6 +110,13 @@ int placeChromaUpsample(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
             if (subh == 0){
             } else if (subh == 1){
                 VkPipeline pipeline = deviceHelper->cachedPipeline["chromaUpsample.spv:bicubicVerticalCenterUpscaleX2"];
+                uint8_t kernelArguments[128];
+                fillKernelArguments(0, kernelArguments, (uint64_t)src[1], (uint64_t)temp, (uint64_t)width, (uint64_t)height);
+                deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
+                fillKernelArguments(0, kernelArguments, (uint64_t)(src[2]), (uint64_t)temp+sizeof(float)*width*smallheight, (uint64_t)width, (uint64_t)height);
+                deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
+            } else if (subh == 2){
+                VkPipeline pipeline = deviceHelper->cachedPipeline["chromaUpsample.spv:bicubicVerticalCenterUpscaleX4"];
                 uint8_t kernelArguments[128];
                 fillKernelArguments(0, kernelArguments, (uint64_t)src[1], (uint64_t)temp, (uint64_t)width, (uint64_t)height);
                 deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, blx, bly, 1);
