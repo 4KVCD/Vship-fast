@@ -27,7 +27,7 @@ void placeResizePlane(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, 
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl2_x, 1, 1);
 
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {src, sizeof(float)*resize_width*resize_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {dest, sizeof(float)*resize_width*resize_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {temp, sizeof(float)*resize_width*source_height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });
 }
