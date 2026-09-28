@@ -36,7 +36,7 @@ float inverseTransferMono(float a, Vship_TransferFunction_t transfer){
             return gamma_to_linrgbfunc(a, 2.2);
         }
         case Vship_TransferFunction_t.Vship_TRC_BT470_BG:{
-            return gamma_to_linrgbfunc(a, 2.6);
+            return gamma_to_linrgbfunc(a, 2.8);
         }
         case Vship_TransferFunction_t.Vship_TRC_BT601:{
             return gamma_to_linrgbfunc(a, 2.8);
