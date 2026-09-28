@@ -106,7 +106,7 @@ public:
         }
         //now we have our float data with the right range in out
         //let's upsample chroma using mem_d as a temporary plane
-        upsample(temp_d, preCropOut, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling, stream);
+        if (upsample(temp_d, preCropOut, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling, stream) != 1) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
 
         //now, we need to transform the YUV into linRGB
         YUVToLinRGBPipeline(preCropOut[0], preCropOut[1], preCropOut[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction, stream);
