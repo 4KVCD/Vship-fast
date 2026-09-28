@@ -190,7 +190,7 @@ public:
     void placeConvert(VkCommandBuffer cmdbuff, VkDeviceAddress temp){
         uint64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
         uint64_t maxHeight= std::max(source_colorspace.target_height, source_colorspace.height);
-        placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling);
+        if (placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
         placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction);
         //then we manage primaries, it depends on the destination
         switch(destination){
