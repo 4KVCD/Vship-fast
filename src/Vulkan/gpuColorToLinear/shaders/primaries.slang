@@ -11,9 +11,9 @@ float3 primariesToXYZ(float3 a, Vship_Primaries_t primarySource){
     switch (primarySource){
         case Vship_Primaries_t.Vship_PRIMARIES_ST170_M:
         case Vship_Primaries_t.Vship_PRIMARIES_ST240_M:{
-            res.x = fma(a.x, 3.5061991f, fma(a.y, -1.7398879f, -a.z*0.54408866f));
-            res.y = fma(a.x, -1.06899334f, fma(a.y, 1.97767857f, a.z*0.03516964f));
-            res.z = fma(a.x, 0.05632201f, fma(a.y, -0.1970296f, a.z*1.05023986f));
+            res.x = fma(a.x, 0.39349893f, fma(a.y, 0.3652766f, a.z*0.19162447f));
+            res.y = fma(a.x, 0.2123645f, fma(a.y, 0.70109542f, a.z*0.08654008f));
+            res.z = fma(a.x, 0.01873804f, fma(a.y, 0.1119396f, a.z*0.95812235f));
             return res;
         }
         case Vship_Primaries_t.Vship_PRIMARIES_BT470_BG:{
