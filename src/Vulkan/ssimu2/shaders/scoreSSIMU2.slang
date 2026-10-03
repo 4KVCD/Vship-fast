@@ -35,8 +35,8 @@ void GaussianSmartSharedLoad(const int thx, const int thy, uint tamponOffset, fl
 //at the end, the central (tamponWidth-gaussianSize*2)*(tamponHeight-gaussianSize*2) part of tampon contains the blurred value for each thread
 float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int thy, uint tamponOffset, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
     float tot[gaussianTileX];
-    float out[gaussianTileX][gaussianTileY+1];
-    for (int i = 0; i < gaussianTileX; i++) for (int j = 0; j < gaussianTileY+1; j++) out[i][j] = 0.f;
+    float out[gaussianTileX*(gaussianTileY+1)];
+    for (int i = 0; i < gaussianTileX; i++) for (int j = 0; j < gaussianTileY+1; j++) out[i+j*gaussianTileX] = 0.f;
 
     //horizontal blur on each X tile columns (each of size gaussianTileX * tamponHeight)
 
@@ -52,7 +52,7 @@ float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int
 
         for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
             for (int i = 0; i < 2*gaussianSize+1; i++){ //starting gaussianSize to the left and going gaussianSize to the right
-                out[region_x][tileRow] += tampon[tamponOffset+tamponY*tamponWidth + thx+i+region_x*gaussianThx]*gaussiankernel[i];
+                out[region_x+tileRow*gaussianTileX] += tampon[tamponOffset+tamponY*tamponWidth + thx+i+region_x*gaussianThx]*gaussiankernel[i];
             }
             tileRow++;
         }
@@ -65,7 +65,7 @@ float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int
         int tileRow = 0;
 
         for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
-            tampon[tamponOffset+(tamponY)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_x][tileRow]/tot[region_x];
+            tampon[tamponOffset+(tamponY)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_x+tileRow*gaussianTileX]/tot[region_x];
             tileRow++;
         }
     }
@@ -82,9 +82,9 @@ float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int
 
 
         for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            out[region_y][region_x] = 0;
+            out[region_y*gaussianTileX+region_x] = 0;
             for (int i = 0; i < 2*gaussianSize+1; i++){ //starting 8 to the left and going 8 to the right
-                out[region_y][region_x] += tampon[tamponOffset+(thy+i+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx]*gaussiankernel[i];
+                out[region_y*gaussianTileX+region_x] += tampon[tamponOffset+(thy+i+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx]*gaussiankernel[i];
             }
         }
     }
@@ -94,7 +94,7 @@ float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int
     for (int region_y = 0; region_y < gaussianTileY; region_y++){
 
         for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            output[region_y*gaussianTileX+region_x] = out[region_y][region_x]/tot[region_y];
+            output[region_y*gaussianTileX+region_x] = out[region_y*gaussianTileX+region_x]/tot[region_y];
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -104,7 +104,7 @@ float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int
 
     for (int region_y = 0; region_y < gaussianTileY; region_y++){
         for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            tampon[tamponOffset+(thy+gaussianSize+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_y][region_x]/tot[region_y];
+            tampon[tamponOffset+(thy+gaussianSize+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_y*gaussianTileX+region_x]/tot[region_y];
         }
     }
     GroupMemoryBarrierWithGroupSync();

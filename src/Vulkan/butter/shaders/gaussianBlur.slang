@@ -66,7 +66,7 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
 
     //horizontalBlur on tampon restraint into rectangle [8 - 40][0 - 48] -> 6 pass per thread
     float tot[2];
-    float out[2][3] = {{0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}};
+    float out[2*3] = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
 
     
     for (int region_x = 0; region_x < 2; region_x++){
@@ -79,7 +79,7 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
         
         for (int region_y = 0; region_y < 3; region_y++){
             for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-                out[region_x][region_y] += tampon[(thy+region_y*16)*48 + thx+i+region_x*16]*gaussiankernel[i];
+                out[region_x*3+region_y] += tampon[(thy+region_y*16)*48 + thx+i+region_x*16]*gaussiankernel[i];
             }
         }
     }
@@ -89,7 +89,7 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     for (int region_x = 0; region_x < 2; region_x++){
         
         for (int region_y = 0; region_y < 3; region_y++){
-            tampon[(thy+region_y*16)*48 + thx+8+region_x*16] = out[region_x][region_y]/tot[region_x];
+            tampon[(thy+region_y*16)*48 + thx+8+region_x*16] = out[region_x*3+region_y]/tot[region_x];
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -105,9 +105,9 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
 
         
         for (int region_x = 0; region_x < 2; region_x++){
-            out[region_y][region_x] = 0;
+            out[region_y+3*region_x] = 0;
             for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-                out[region_y][region_x] += tampon[(thy+i+region_y*16)*48 + thx+8+region_x*16]*gaussiankernel[i];
+                out[region_y+3*region_x] += tampon[(thy+i+region_y*16)*48 + thx+8+region_x*16]*gaussiankernel[i];
             }
         }
     }
@@ -117,7 +117,7 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     for (int region_y = 0; region_y < 2; region_y++){
         
         for (int region_x = 0; region_x < 2; region_x++){
-            tampon[(thy+8+region_y*16)*48 + thx+8+region_x*16] = out[region_y][region_x]/tot[region_y];
+            tampon[(thy+8+region_y*16)*48 + thx+8+region_x*16] = out[region_y+3*region_x]/tot[region_y];
         }
     }
     GroupMemoryBarrierWithGroupSync();
