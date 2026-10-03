@@ -13,14 +13,18 @@ ARCH ?= native
 #can be native or all
 DEBUG ?= 0
 
+EXECUTE_PREFIX ?= ./
+#default is del for windows and rm -f for linux
+RM ?= default
+
 HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx1034,gfx1035,gfx906,gfx801,gfx802,gfx803
 
 VSHIP_VERSION_MAJOR=5
 VSHIP_VERSION_MINOR=1
 VSHIP_VERSION_MINORMINOR=2
 
-CXXFLAGS += -DVSHIP_VERSION_MAJOR=$(VSHIP_VERSION_MAJOR) -DVSHIP_VERSION_MINOR=$(VSHIP_VERSION_MINOR) -DVSHIP_VERSION_MINORMINOR=$(VSHIP_VERSION_MINORMINOR)
-VSHIP_CXXFLAGS += -std=c++17 -I "$(current_dir)include"
+CXXFLAGS +=
+VSHIP_CXXFLAGS += -std=c++17 -I "$(current_dir)include" -DVSHIP_VERSION_MAJOR=$(VSHIP_VERSION_MAJOR) -DVSHIP_VERSION_MINOR=$(VSHIP_VERSION_MINOR) -DVSHIP_VERSION_MINORMINOR=$(VSHIP_VERSION_MINORMINOR)
 VSHIP_LDFLAGS += -shared
 ifeq ($(DEBUG), 1)
 	VSHIP_CXXFLAGS += -g -O2
@@ -103,7 +107,9 @@ ifeq ($(OS),Windows_NT)
 	FFVSHIP_CXXFLAGS += -I include
 
 	STATIC_ARCHIVING := lib /nologo /out:libvship$(staticend) libvship.o
-	RM := del
+	ifeq ($(RM),default)
+		RM := del
+	endif
 else
 	dllend := .so
 	exeend :=
@@ -125,7 +131,9 @@ else
 
 	STATIC_ARCHIVING := ar rcs libvship$(staticend) libvship.o
 
-	RM := rm
+	ifeq ($(RM),default)
+		RM := rm -f
+	endif
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -167,10 +175,10 @@ endef
 .FORCE:
 
 cleanbuildFFVSHIP: .FORCE
-	$(RM) -f FFVship$(exeend)
+	$(RM) FFVship$(exeend)
 
 cleanbuild: .FORCE
-	$(RM) -f shaderEmbedder$(exeend) libvship_static.pc libvship.pc libvship$(staticend) libvship$(dllend)
+	$(RM) shaderEmbedder$(exeend) libvship_static.pc libvship.pc libvship$(staticend) libvship$(dllend)
 
 clean: cleanbuildFFVSHIP cleanbuild
 
@@ -179,8 +187,8 @@ buildFFVSHIP: cleanbuildFFVSHIP src/FFVship.cpp .FORCE
 
 shaderEmbedder: .FORCE
 ifeq ($(BACKEND),Vulkan)
-	$(CXX) src/Vulkan/spvFileToCppHeader.cpp -std=c++17 -O2 -o shaderEmbedder
-	./shaderEmbedder libvshipSpvShaders include/libvshipSpvShaders.hpp
+	$(CXX) src/Vulkan/spvFileToCppHeader.cpp $(CXXFLAGS) $(LDFLAGS) -std=c++17 -O2 -o shaderEmbedder
+	$(EXECUTE_PREFIX)shaderEmbedder libvshipSpvShaders include/libvshipSpvShaders.hpp
 endif
 
 #no pkgconfig for windows
@@ -280,9 +288,9 @@ install: finalizepkgConfig uninstall
 		install -m755 FFVship "$(exe_install_path)/FFVship"; \
 	fi
 uninstall:
-	rm -f "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(staticend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(pkgconfig_install_path)/libvship.pc" "$(pkgconfig_install_path)/libvship_static.pc" "$(exe_install_path)/FFVship"
+	$(RM) "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(staticend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(pkgconfig_install_path)/libvship.pc" "$(pkgconfig_install_path)/libvship_static.pc" "$(exe_install_path)/FFVship"
 uninstallOld:
-	rm -f "$(plugin_install_path)/vship$(dllend)" "$(lib_install_path)/vship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(exe_install_path)/FFVship"
+	$(RM) "$(plugin_install_path)/vship$(dllend)" "$(lib_install_path)/vship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(exe_install_path)/FFVship"
 endif
 
 buildcuda: src/VshipLib.cpp .FORCE
