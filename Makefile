@@ -15,7 +15,7 @@ DEBUG ?= 0
 
 EXECUTE_PREFIX ?= ./
 #default is del for windows and rm -f for linux
-RM ?= default
+RMCMD ?= default
 
 HIPARCH := gfx1201,gfx1200,gfx1100,gfx1101,gfx1102,gfx1103,gfx1151,gfx1012,gfx1030,gfx1031,gfx1032,gfx1034,gfx1035,gfx906,gfx801,gfx802,gfx803
 
@@ -107,8 +107,8 @@ ifeq ($(OS),Windows_NT)
 	FFVSHIP_CXXFLAGS += -I include
 
 	STATIC_ARCHIVING := lib /nologo /out:libvship$(staticend) libvship.o
-	ifeq ($(RM),default)
-		RM := del
+	ifeq ($(RMCMD),default)
+		RMCMD := del
 	endif
 else
 	dllend := .so
@@ -131,8 +131,8 @@ else
 
 	STATIC_ARCHIVING := ar rcs libvship$(staticend) libvship.o
 
-	ifeq ($(RM),default)
-		RM := rm -f
+	ifeq ($(RMCMD),default)
+		RMCMD := rm -f
 	endif
 endif
 
@@ -175,10 +175,10 @@ endef
 .FORCE:
 
 cleanbuildFFVSHIP: .FORCE
-	$(RM) FFVship$(exeend)
+	$(RMCMD) FFVship$(exeend)
 
 cleanbuild: .FORCE
-	$(RM) shaderEmbedder$(exeend) libvship_static.pc libvship.pc libvship$(staticend) libvship$(dllend)
+	$(RMCMD) shaderEmbedder$(exeend) libvship_static.pc libvship.pc libvship$(staticend) libvship$(dllend)
 
 clean: cleanbuildFFVSHIP cleanbuild
 
@@ -218,7 +218,7 @@ build: cleanbuild shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) -c src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) -o "libvship.o"
 	$(VSHIP_LD) libvship.o $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
 	$(STATIC_ARCHIVING)
-	$(RM) "libvship.o"
+	$(RMCMD) "libvship.o"
 else
 build: cleanbuild shaderEmbedder src/VshipLib.cpp genpkgConfig .FORCE
 	$(VSHIP_CXX) src/VshipLib.cpp $(CXXFLAGS) $(VSHIP_CXXFLAGS) $(LDFLAGS) $(VSHIP_LDFLAGS) -o "libvship$(dllend)"
@@ -288,9 +288,9 @@ install: finalizepkgConfig uninstall
 		install -m755 FFVship "$(exe_install_path)/FFVship"; \
 	fi
 uninstall:
-	$(RM) "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(staticend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(pkgconfig_install_path)/libvship.pc" "$(pkgconfig_install_path)/libvship_static.pc" "$(exe_install_path)/FFVship"
+	$(RMCMD) "$(plugin_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(dllend)" "$(lib_install_path)/libvship$(staticend)" "$(header_install_path)/VshipAPI.h" "$(header_install_path)/VshipColor.h" "$(pkgconfig_install_path)/libvship.pc" "$(pkgconfig_install_path)/libvship_static.pc" "$(exe_install_path)/FFVship"
 uninstallOld:
-	$(RM) "$(plugin_install_path)/vship$(dllend)" "$(lib_install_path)/vship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(exe_install_path)/FFVship"
+	$(RMCMD) "$(plugin_install_path)/vship$(dllend)" "$(lib_install_path)/vship$(dllend)" "$(header_install_path)/VshipAPI.h" "$(exe_install_path)/FFVship"
 endif
 
 buildcuda: src/VshipLib.cpp .FORCE
