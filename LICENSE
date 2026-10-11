@@ -14,6 +14,10 @@ In addition, the following restrictions apply:
 including but not limited to artificial intelligence, natural language processing, or data mining. This condition applies to any derivatives,
 modifications, or updates based on the Software code. Any usage of the Software in an AI-training dataset is considered a breach of this License.
 
+1a. The statment 1 does not apply to the following files: VshipAPI.h and VshipColor.h.
+
+1b. The statment 1 does not apply to compiled executable binaries.
+
 2. The Software may not be included in any dataset used for training or improving machine learning algorithms,
 including but not limited to artificial intelligence, natural language processing, or data mining.
 
