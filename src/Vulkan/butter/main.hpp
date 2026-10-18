@@ -133,7 +133,7 @@ VkDeviceAddress placeGetmultiscalediffmap(VshipDeviceHelper* deviceHelper, VkCom
     VkDeviceAddress diffmap = placeGetdiffmap(deviceHelper, cmdBuff, src1_d, src2_d, mem_d+sizeof(float)*2*width*height, width, height, intensity_multiplier, gaussianHandle);
     //diffmap is stored at mem_d+8*width*height so we can build after that the second smaller scale
     //smaller scale now
-    nmem_d = mem_d+sizeof(float)*6*width*height;
+    nmem_d = mem_d+sizeof(float)*3*width*height;
     VkDeviceAddress diffmapsmall = placeGetdiffmap(deviceHelper, cmdBuff, nsrc1_d, nsrc2_d, nmem_d, nwidth, nheight, intensity_multiplier, gaussianHandle);
 
     placeAddsupersample2X(deviceHelper, cmdBuff, diffmap, diffmapsmall, width, height, 0.5f);
@@ -183,8 +183,9 @@ public:
         this->height = VshipColorConvert::getColorspaceHeight(source_colorspace);
 
         //memory allocations
-        size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
-        size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
+        const size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
+        const size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);
+
         mem_d = deviceHelper->device.mallocDevice(sizeof(float)*width*height*(6) + std::max(sizeof(float)*width*height*(25), (uint64_t)(tempSizeConverter1+tempSizeConverter2)));
 
         //initial color planes
@@ -258,11 +259,12 @@ public:
         float* intermediate;
         if (dstp != NULL){
             isHostAllocated = deviceHelper->device.isHostAllocated(dstp);
-            intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc((width*height)*sizeof(float));
+            intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc(dststride*height);
             resetCmdBuffer(cmdBuffs[3]);
             beginCmdBuffer(cmdBuffs[3]);
-            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d+sizeof(float)*6*width*height, dststride, width, height);
-            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d+sizeof(float)*6*width*height, dststride * height);
+            //distmap address is at +8 so we start at +9, src is from 0 to 6 and we prefer not to touch it
+            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d+sizeof(float)*9*width*height, dststride, width, height);
+            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d+sizeof(float)*9*width*height, dststride * height);
             endCmdBuffer(cmdBuffs[3]);
         }
 

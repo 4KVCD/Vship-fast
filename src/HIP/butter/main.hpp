@@ -161,8 +161,8 @@ std::tuple<float, float, float> butterprocess(const uint8_t *dstp, int64_t dstst
 
     //diffmap is in its final form
     if (dstp != NULL){
-        strideAdder(diffmap, mem_d+6*width*height, dststride, width, height, stream);
-        GPU_CHECK(hipMemcpyDtoHAsync((void*)(dstp), mem_d+6*width*height, dststride * height, stream));
+        strideAdder(diffmap, mem_d+9*width*height, dststride, width, height, stream);
+        GPU_CHECK(hipMemcpyDtoHAsync((void*)(dstp), mem_d+9*width*height, dststride * height, stream));
     }
 
     std::tuple<double, double, double> finalres;

@@ -409,11 +409,11 @@ public:
         float* intermediate;
         if (dstp != NULL){
             isHostAllocated = deviceHelper->device.isHostAllocated(dstp);
-            intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc((resize_width*resize_height)*sizeof(float));
+            intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc(dststride * resize_height*sizeof(float));
             resetCmdBuffer(cmdBuffs[3]);
             beginCmdBuffer(cmdBuffs[3]);
-            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d + sizeof(float)*4*pyramidSize, dststride, resize_width, resize_height);
-            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d + sizeof(float)*4*pyramidSize, dststride * resize_height);
+            placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d + sizeof(float)*1*pyramidSize, dststride, resize_width, resize_height);
+            deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d + sizeof(float)*1*pyramidSize, dststride * resize_height);
             endCmdBuffer(cmdBuffs[3]);
         }
 
