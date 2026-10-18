@@ -8,7 +8,7 @@ void placeRgb_to_positive_xyb(VshipDeviceHelper* deviceHelper, VkCommandBuffer c
     int64_t bl_x = (width-1)/th_x + 1;
     VkPipeline pipeline = deviceHelper->cachedPipeline["makeXYBSSIMU2.spv:rgb_to_positive_xyb"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, src_d[0], src_d[1], src_d[2], width);
+    fillKernelArguments(0, kernelArguments, src_d[0], src_d[1], src_d[2], width, (uint32_t)0);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, 1, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {src_d[0], width*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},

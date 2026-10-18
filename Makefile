@@ -235,8 +235,7 @@ shaderBuild: .FORCE
 	slangc src/Vulkan/gpuColorToLinear/shaders/YUVToLinRGB.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry YUVToLinRGB -o libvshipSpvShaders/YUVToLinRGB.spv
 	slangc src/Vulkan/ssimu2/shaders/downsampleSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry downsample -o libvshipSpvShaders/downsampleSSIMU2.spv
 	slangc src/Vulkan/ssimu2/shaders/makeXYBSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry rgb_to_positive_xyb -o libvshipSpvShaders/makeXYBSSIMU2.spv
-	slangc src/Vulkan/ssimu2/shaders/sumreduceSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry sumreduce -o libvshipSpvShaders/sumreduceSSIMU2.spv
-	slangc src/Vulkan/ssimu2/shaders/scoreSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry planescale_map -o libvshipSpvShaders/scoreSSIMU2.spv
+	slangc src/Vulkan/ssimu2/shaders/scoreSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry blurRows -entry blurColumnsAndScore -o libvshipSpvShaders/scoreSSIMU2.spv
 	slangc src/Vulkan/butter/shaders/gaussianBlur.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry TiledGaussianBlur -entry verticalBlur -entry horizontalBlur -o libvshipSpvShaders/gaussianBlurButter.spv
 	slangc src/Vulkan/butter/shaders/downupsample.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry addsupersample2X -entry downsample -o libvshipSpvShaders/downupsampleButter.spv
 	slangc src/Vulkan/butter/shaders/combineMasks.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry computeDiffmap -o libvshipSpvShaders/combineMasksButter.spv

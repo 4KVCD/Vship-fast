@@ -28,25 +28,9 @@ void placeDebugTransfer(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {{in, size, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}});
 }
 
-//scale goes from 1 to 5 included (size of the small scale)
-downsampleKernelInformation getScaleDownsampleInfo(int scale){
-    downsampleKernelInformation info;
-    info.result_XYB = (scale == 5); //last scale only
-
-    SkipMap skipMaps[3];
-    for (int i = 0; i < 3; i++){
-        skipMaps[i] = getSkipMap(i, scale-1);
-    }
-    info.skipX = skipMaps[0].ssim && skipMaps[0].artifact && skipMaps[0].detailloss;
-    info.skipY = skipMaps[1].ssim && skipMaps[1].artifact && skipMaps[1].detailloss;
-    info.skipB = skipMaps[2].ssim && skipMaps[2].artifact && skipMaps[2].detailloss;
-
-    return info;
-}
-
-//expects planar linear RGB input. Beware that each src1_d, src2_d and temp_d must be of size "totalscalesize" even if the actual image is contained in a width*height format
-//output of size 108 float
-void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* output, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress temp_d, int64_t width, int64_t height, GaussianHandle& gaussianhandle){
+//expects planar linear RGB input. Beware that each src1_d and src2_d must be of size "totalscalesize" even if the actual image is contained in a width*height format
+//temp_d holds tempAllocsizeScore floats and sums_d sumsSize floats, copied to sums on the CPU
+void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* sums, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress temp_d, VkDeviceAddress sums_d, int64_t width, int64_t height, GaussianHandle& gaussianhandle){
     const int64_t totalscalesize = getTotalScaleSize(width, height);
 
     //step 1 : fill the downsample part
@@ -54,7 +38,7 @@ void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
     int64_t nh = height;
     int64_t index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src1_d[0]+sizeof(float)*index, src1_d[1]+sizeof(float)*index, src1_d[2]+sizeof(float)*index, src1_d[0]+sizeof(float)*(index+nw*nh), src1_d[1]+sizeof(float)*(index+nw*nh), src1_d[2]+sizeof(float)*(index+nw*nh), nw, nh, getScaleDownsampleInfo(scale));
+        placeDownsample(deviceHelper, cmdBuff, src1_d[0]+sizeof(float)*index, src1_d[1]+sizeof(float)*index, src1_d[2]+sizeof(float)*index, src1_d[0]+sizeof(float)*(index+nw*nh), src1_d[1]+sizeof(float)*(index+nw*nh), src1_d[2]+sizeof(float)*(index+nw*nh), nw, nh, scale == 5);
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
@@ -63,7 +47,7 @@ void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
     nh = height;
     index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src2_d[0]+sizeof(float)*index, src2_d[1]+sizeof(float)*index, src2_d[2]+sizeof(float)*index, src2_d[0]+sizeof(float)*(index+nw*nh), src2_d[1]+sizeof(float)*(index+nw*nh) , src2_d[2]+sizeof(float)*(index+nw*nh), nw, nh, getScaleDownsampleInfo(scale));
+        placeDownsample(deviceHelper, cmdBuff, src2_d[0]+sizeof(float)*index, src2_d[1]+sizeof(float)*index, src2_d[2]+sizeof(float)*index, src2_d[0]+sizeof(float)*(index+nw*nh), src2_d[1]+sizeof(float)*(index+nw*nh) , src2_d[2]+sizeof(float)*(index+nw*nh), nw, nh, scale == 5);
         index += nw*nh;
         nw = (nw -1)/2 + 1;
         nh = (nh - 1)/2 + 1;
@@ -78,7 +62,7 @@ void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
     //step 5 : edge diff map    
     //std::vector<float> allscore_res;
     //measure_vec[plane*6*2*3 + scale*2*3 + n*3 + i]
-    placeAllscore_map(deviceHelper, cmdBuff, output, src1_d, src2_d, temp_d, width, height, gaussianhandle);
+    placeAllscore_map(deviceHelper, cmdBuff, sums, sums_d, src1_d, src2_d, temp_d, width, height, gaussianhandle);
 
     //step 6 : format the vector
 
@@ -104,7 +88,7 @@ class SSIMU2ComputingImplementation{
     VkDeviceAddress converterTempMemory;
     FenceManager* fence;
     VkSemaphore semaphore;
-    float* outputCPU;
+    float* sumsCPU;
 public:
     void init(Vship_Colorspace_t source_colorspace, Vship_Colorspace_t source_colorspace2, int gpu_id){
         this->deviceHelper = getGlobalVulkanInstance().get(gpu_id);
@@ -114,14 +98,16 @@ public:
         this->height = VshipColorConvert::getColorspaceHeight(source_colorspace);
         const int64_t totalscalesize = getTotalScaleSize(width, height);
         const uint64_t tempsize = tempAllocsizeScore(width, height);
+        const uint64_t sumssize = sumsSize(width, height);
 
         //memory allocations
-        mem_d = deviceHelper->device.mallocDevice(sizeof(float)*totalscalesize*6 + sizeof(float)*tempsize);
+        mem_d = deviceHelper->device.mallocDevice(sizeof(float)*totalscalesize*6 + sizeof(float)*tempsize + sizeof(float)*sumssize);
 
         VkDeviceAddress src1_d[3] = {mem_d, mem_d+sizeof(float)*totalscalesize, mem_d+2*sizeof(float)*totalscalesize};
         VkDeviceAddress src2_d[3] = {mem_d+3*sizeof(float)*totalscalesize, mem_d+4*sizeof(float)*totalscalesize, mem_d+5*sizeof(float)*totalscalesize};
         VkDeviceAddress temp_d = mem_d+6*sizeof(float)*totalscalesize; //of size tempsize
-        outputCPU = (float*)deviceHelper->device.mallocHost(108*sizeof(float));
+        VkDeviceAddress sums_d = temp_d+sizeof(float)*tempsize; //of size sumssize
+        sumsCPU = (float*)deviceHelper->device.mallocHost(sumssize*sizeof(float));
 
         fence = deviceHelper->device.createFence();
         semaphore = deviceHelper->device.createSemaphores();
@@ -153,7 +139,7 @@ public:
         converter1.placeConvert(cmdBuffs[2], converterTempMemory);
         converter2.placeConvert(cmdBuffs[2], converterTempMemory+tempSizeConverter1);
         //result should be in src1_d src2_d
-        placeSsimu2GPUProcess(deviceHelper, cmdBuffs[2], outputCPU, src1_d, src2_d, temp_d, width, height, gaussianhandle);
+        placeSsimu2GPUProcess(deviceHelper, cmdBuffs[2], sumsCPU, src1_d, src2_d, temp_d, sums_d, width, height, gaussianhandle);
         endCmdBuffer(cmdBuffs[2]);
 
         fence->synchronize();
@@ -167,7 +153,7 @@ public:
         deviceHelper->device.destroySemaphores(semaphore);
         deviceHelper->device.freeDevice(mem_d);
         deviceHelper->device.freeDevice(converterTempMemory);
-        deviceHelper->device.freeHost((void*)outputCPU);
+        deviceHelper->device.freeHost((void*)sumsCPU);
     }
     double run(const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
@@ -184,8 +170,8 @@ public:
         deviceHelper->device.executeBuffers(cmdBuffs.data()+1, &semaphore, 2, fence);
         //then we have nothing else to do that wait
         fence->synchronize();
-        //output should be in outputCPU
-        double res = final_score(outputCPU);
+        //the sums should be in sumsCPU
+        double res = final_score(sumsCPU, width, height);
         
         return res;
     }

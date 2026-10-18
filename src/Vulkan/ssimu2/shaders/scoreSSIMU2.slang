@@ -1,226 +1,242 @@
+// SSIMULACRA2's error maps of one plane at one scale, computed like libjxl's tools/ssimulacra2.cc, the reference
+// the scores are compared with.
+//
+// The 5 signals SSIMMap and EdgeDiffMap need are blurred: img1*img1, img2*img2, img1*img2, img1 and img2. The blur
+// is libjxl's recursive Gaussian (tools/gauss_blur.cc): a recurrence along each row (blurRows) then along each
+// column (blurColumnsAndScore), zero outside the image. Both passes run libjxl's arithmetic in the same order (the
+// rows in libjxl's blocks of 4 outputs) so that they round like libjxl's. blurColumnsAndScore uses each blurred
+// pixel right away for the SSIM and edge difference maps and sums them, and the scores are finished on the CPU.
+//
+// The coefficient buffer holds mul_in, mul_prev and mul_prev2 (3 terms of 4 lanes each), then n2 and d1
+// (GaussianHandle in gaussianblur.hpp).
 
-//these parameters needs to be the same in the gaussianblur.hpp file
+static const int RADIUS = 5;  // recursiveGaussianRadius
+static const int SIGNALS = 5; // img1*img1, img2*img2, img1*img2, img1, img2
+static const int THREADS = 64;
+static const float kC2 = 0.0009f;
 
-//for now only accepts squares Tiling (see GaussianSmart_device out and tot arrays)
-//only allows powers of 2 for Thx and Thy due to pointer jumping (8/8 16/16 and 32/32)
-static const int gaussianThx = 16;
-static const int gaussianThy = 16;
-//Optimization Island in gaussianSize lies in gaussianTh/2
-static const int gaussianSize = 8; //if gaussianSize is below gaussianTh/2, you need to change tampon size
-
-static const int gaussianTileX = 1;
-static const int gaussianTileY = 1;
-
-static const int tamponWidth = (gaussianThx*gaussianTileX + 2*gaussianSize);
-static const int tamponHeight = (gaussianThy*gaussianTileY + 2*gaussianSize);
-
-//constexpr max doesnt work so you may swap between tamponWidth*tamponHeight*3 and 6*gaussianThx*gaussianThy
-static groupshared float tampon[tamponWidth*tamponHeight*3];
-
-void GaussianSmartSharedLoad(const int thx, const int thy, uint tamponOffset, float* src, int64_t x, int64_t y, int64_t width, int64_t height){
-    const int64_t tampon_base_x = x - (int64_t)thx - (int64_t)gaussianSize;
-    const int64_t tampon_base_y = y - (int64_t)thy - (int64_t)gaussianSize;
-    const int thid = thy*gaussianThx+thx;
-
-    for (int i = thid; i < tamponWidth*tamponHeight; i+=gaussianThx*gaussianThy){
-        const int tamponX = i%tamponWidth;
-        const int tamponY = i/tamponWidth;
-
-        tampon[tamponOffset+i] = (tampon_base_x + tamponX >= 0 && tampon_base_x + tamponX < width && tampon_base_y + tamponY >= 0 && tampon_base_y + tamponY < height) ? src[(tampon_base_y+tamponY)*width + tampon_base_x+tamponX] : 0.f;
-    }
-    GroupMemoryBarrierWithGroupSync();
+// Returns x. Its bits go through an OR with a zero only known at run time, so the compiler cannot fuse the
+// multiplication that produced x into an addition: libjxl rounds these products before adding them.
+float unfused(float x, uint zero){
+    return asfloat(asuint(x) | zero);
 }
 
-//the following comment is only true if you uncomment putting the end result in the tampon, currently, the result is only put in output
-//at the end, the central (tamponWidth-gaussianSize*2)*(tamponHeight-gaussianSize*2) part of tampon contains the blurred value for each thread
-float[gaussianTileX*gaussianTileY] GaussianSmart_Device(const int thx, const int thy, uint tamponOffset, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
-    float tot[gaussianTileX];
-    float out[gaussianTileX*(gaussianTileY+1)];
-    for (int i = 0; i < gaussianTileX; i++) for (int j = 0; j < gaussianTileY+1; j++) out[i+j*gaussianTileX] = 0.f;
-
-    //horizontal blur on each X tile columns (each of size gaussianTileX * tamponHeight)
-
-    for (int region_x = 0; region_x < gaussianTileX; region_x++){
-
-        //border handling precompute
-        const int beg = (int)(max((int64_t)0, x-(int64_t)gaussianSize+(int64_t)region_x*(int64_t)gaussianThx)-(x-(int64_t)gaussianSize+(int64_t)region_x*(int64_t)gaussianThx));
-        const int end2 = (int)(min(width, x+(int64_t)gaussianSize+1+(int64_t)region_x*(int64_t)gaussianThx)-min(width, (x-(int64_t)gaussianSize+(int64_t)region_x*(int64_t)gaussianThx)));
-        tot[region_x] = gaussiankernel_integral[end2]-gaussiankernel_integral[beg];
-
-        //if (2*gaussianSize)%gaussianThy != 0, we will have idle threads at last step
-        int tileRow = 0;
-
-        for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
-            for (int i = 0; i < 2*gaussianSize+1; i++){ //starting gaussianSize to the left and going gaussianSize to the right
-                out[region_x+tileRow*gaussianTileX] += tampon[tamponOffset+tamponY*tamponWidth + thx+i+region_x*gaussianThx]*gaussiankernel[i];
-            }
-            tileRow++;
-        }
-    }
-
-    //rewrite result in tampon and normalize
-    GroupMemoryBarrierWithGroupSync();
-
-    for (int region_x = 0; region_x < gaussianTileX; region_x++){
-        int tileRow = 0;
-
-        for (int tamponY = thy; tamponY < tamponHeight; tamponY += gaussianThy){
-            tampon[tamponOffset+(tamponY)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_x+tileRow*gaussianTileX]/tot[region_x];
-            tileRow++;
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
-
-    //verticalBlur on tampon restraint into final center rectangle.
-
-    for (int region_y = 0; region_y < gaussianTileY; region_y++){
-
-        //border handling precompute
-        const int beg = (int)(max((int64_t)0, y-(int64_t)gaussianSize+(int64_t)region_y*(int64_t)gaussianThy)-(y-(int64_t)gaussianSize+(int64_t)region_y*(int64_t)gaussianThy));
-        const int end2 = (int)(min(height, y+(int64_t)gaussianSize+1+(int64_t)region_y*(int64_t)gaussianThy)-min(height, (y-(int64_t)gaussianSize+(int64_t)region_y*(int64_t)gaussianThy)));
-        tot[region_y] = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
-
-
-        for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            out[region_y*gaussianTileX+region_x] = 0;
-            for (int i = 0; i < 2*gaussianSize+1; i++){ //starting 8 to the left and going 8 to the right
-                out[region_y*gaussianTileX+region_x] += tampon[tamponOffset+(thy+i+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx]*gaussiankernel[i];
-            }
-        }
-    }
-
-    //put data to result, one data point per Tile
-    float output[gaussianTileX*gaussianTileY];
-    for (int region_y = 0; region_y < gaussianTileY; region_y++){
-
-        for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            output[region_y*gaussianTileX+region_x] = out[region_y*gaussianTileX+region_x]/tot[region_y];
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
-    return output;
-    //put data back to tampon -> extra operations and sync
-    /*
-
-    for (int region_y = 0; region_y < gaussianTileY; region_y++){
-        for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            tampon[tamponOffset+(thy+gaussianSize+region_y*gaussianThy)*tamponWidth + thx+gaussianSize+region_x*gaussianThx] = out[region_y*gaussianTileX+region_x]/tot[region_y];
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
-    */
+// The value of signal s for the pixel values a (img1) and b (img2).
+float signal(int s, float a, float b, uint zero){
+    if (s == 0) return unfused(a*a, zero);
+    if (s == 1) return unfused(b*b, zero);
+    if (s == 2) return unfused(a*b, zero);
+    if (s == 3) return a;
+    return b;
 }
+
+// a/b correctly rounded, like the CPU's division; Vulkan allows the GPU's own division to be 2.5 ulp off.
+float divide(float a, float b){
+    const float r = 1.0f/b;
+    const float q = a*r;
+    const float e = fma(-q, b, a);
+    return fma(e, r, q);
+}
+
+// Horizontal pass, libjxl's FastGaussian1D: one thread per row computes the 5 signals' blurred rows into rows
+// (5 planes of width*height).
+[shader("compute")]
+[numthreads(THREADS, 1, 1)]
+void blurRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* img1, uniform float* img2, uniform float* rows, uniform float* coefficients, uniform int64_t width64, uniform int64_t height64, uniform uint zero){
+    const int width = (int)width64;
+    const int height = (int)height64;
+    const int y = threadIdx.x + blockIdx.x*THREADS;
+    if (y >= height) return;
+    const uint64_t planeSize = (uint64_t)width*(uint64_t)height;
+    float* row1 = img1 + (uint64_t)y*(uint64_t)width;
+    float* row2 = img2 + (uint64_t)y*(uint64_t)width;
+    float* out = rows + (uint64_t)y*(uint64_t)width;
+
+    float4 mulIn[3], mulPrev[3], mulPrev2[3];
+    [ForceUnroll]
+    for (int k = 0; k < 3; k++){
+        mulIn[k] = float4(coefficients[4*k], coefficients[4*k+1], coefficients[4*k+2], coefficients[4*k+3]);
+        mulPrev[k] = float4(coefficients[12+4*k], coefficients[12+4*k+1], coefficients[12+4*k+2], coefficients[12+4*k+3]);
+        mulPrev2[k] = float4(coefficients[24+4*k], coefficients[24+4*k+1], coefficients[24+4*k+2], coefficients[24+4*k+3]);
+    }
+
+    float prev[SIGNALS][3];
+    float prev2[SIGNALS][3];
+    [ForceUnroll]
+    for (int s = 0; s < SIGNALS; s++){
+        [ForceUnroll]
+        for (int k = 0; k < 3; k++){
+            prev[s][k] = 0.0f;
+            prev2[s][k] = 0.0f;
+        }
+    }
+
+    // One output at a time, with zero outside the row: the first outputs and those near the end.
+    int n = -RADIUS + 1;
+    const int firstAligned = 8; // libjxl's RoundUpTo(RADIUS + 1, 4)
+    for (int pass = 0; pass < 2; pass++){
+        const int end = (pass == 0) ? min(firstAligned, width) : width;
+        for (; n < end; n++){
+            const int left = n - RADIUS - 1;
+            const int right = n + RADIUS - 1;
+            const float a0 = (left >= 0) ? row1[left] : 0.0f;
+            const float b0 = (left >= 0) ? row2[left] : 0.0f;
+            const float a1 = (right < width) ? row1[right] : 0.0f;
+            const float b1 = (right < width) ? row2[right] : 0.0f;
+            [ForceUnroll]
+            for (int s = 0; s < SIGNALS; s++){
+                const float sum = ((left >= 0) ? signal(s, a0, b0, zero) : 0.0f) + ((right < width) ? signal(s, a1, b1, zero) : 0.0f);
+                float o[3];
+                [ForceUnroll]
+                for (int k = 0; k < 3; k++){
+                    o[k] = sum*mulIn[k].x;
+                    o[k] = fma(mulPrev2[k].x, prev2[s][k], o[k]);
+                    prev2[s][k] = prev[s][k];
+                    o[k] = fma(mulPrev[k].x, prev[s][k], o[k]);
+                    prev[s][k] = o[k];
+                }
+                if (n >= 0) out[s*planeSize + n] = o[0] + (o[1] + o[2]);
+            }
+        }
+        if (pass == 1) break;
+
+        // 4 outputs at a time without bounds checks, as libjxl's unrolled loop: output n+L gets the 4 sums of
+        // the block, sum j with coefficient mulIn[L-j] (none for j > L), then the previous two outputs.
+        for (; n < width - RADIUS + 1 - 3; n += 4){
+            float a[8], b[8];
+            [ForceUnroll]
+            for (int j = 0; j < 4; j++){
+                a[j] = row1[n + j - RADIUS - 1];
+                b[j] = row2[n + j - RADIUS - 1];
+                a[4+j] = row1[n + j + RADIUS - 1];
+                b[4+j] = row2[n + j + RADIUS - 1];
+            }
+            [ForceUnroll]
+            for (int s = 0; s < SIGNALS; s++){
+                float4 sum;
+                [ForceUnroll]
+                for (int j = 0; j < 4; j++) sum[j] = signal(s, a[j], b[j], zero) + signal(s, a[4+j], b[4+j], zero);
+                float4 o[3];
+                [ForceUnroll]
+                for (int k = 0; k < 3; k++){
+                    o[k] = sum.x*mulIn[k];
+                    [ForceUnroll]
+                    for (int L = 1; L < 4; L++){
+                        [ForceUnroll]
+                        for (int j = 1; j < 4; j++) if (j <= L) o[k][L] = fma(mulIn[k][L-j], sum[j], o[k][L]);
+                    }
+                    o[k] = fma(mulPrev2[k], float4(prev2[s][k]), o[k]);
+                    o[k] = fma(mulPrev[k], float4(prev[s][k]), o[k]);
+                    prev2[s][k] = o[k].z;
+                    prev[s][k] = o[k].w;
+                }
+                const float4 result = o[0] + (o[1] + o[2]);
+                [ForceUnroll]
+                for (int L = 0; L < 4; L++) out[s*planeSize + n + L] = result[L];
+            }
+        }
+    }
+}
+
+// Vertical pass, libjxl's FastGaussianVertical, one thread per column, and the error maps of SSIMMap and
+// EdgeDiffMap for each blurred pixel. Each workgroup writes the sums over its columns of the ssim error, the
+// ringing (artifact) and the blurring (detail lost) and of their 4th powers into sums[6*blockIdx.x...].
+groupshared float partialSums[6][THREADS];
 
 [shader("compute")]
-[numthreads(gaussianThx, gaussianThy, 1)]
-void planescale_map(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* im1, uniform float* im2, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform uint64_t bl_x, uniform uint64_t bl_y, uniform int skipMap){
-    const int64_t x = (threadIdx.x + blockIdx.x*gaussianThx*gaussianTileX);
-    const int64_t y = (threadIdx.y + blockIdx.y*gaussianThy*gaussianTileY);
+[numthreads(THREADS, 1, 1)]
+void blurColumnsAndScore(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* img1, uniform float* img2, uniform float* rows, uniform float* coefficients, uniform float* sums, uniform int64_t width64, uniform int64_t height64, uniform uint zero){
+    const int width = (int)width64;
+    const int height = (int)height64;
+    const int x = threadIdx.x + blockIdx.x*THREADS;
+    const uint64_t planeSize = (uint64_t)width*(uint64_t)height;
 
-    const int64_t threadnum = gaussianThx*gaussianThy;
-    const int thid = threadIdx.y*gaussianThx + threadIdx.x;
-
-    //fill image buffers
-    GaussianSmartSharedLoad(threadIdx.x, threadIdx.y, 0, im1, x, y, width, height);
-    GaussianSmartSharedLoad(threadIdx.x, threadIdx.y, tamponWidth*tamponHeight, im2, x, y, width, height);
-
-    //our final values which may be unset depending on skip
-    float im1p[gaussianTileX*gaussianTileY], im2p[gaussianTileX*gaussianTileY], m1[gaussianTileX*gaussianTileY], m2[gaussianTileX*gaussianTileY], s12[gaussianTileX*gaussianTileY], s11_s22[gaussianTileX*gaussianTileY];
-    float ssim[gaussianTileX*gaussianTileY], artifact[gaussianTileX*gaussianTileY], detailloss[gaussianTileX*gaussianTileY];
-    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
-        ssim[i] = 0;
-        artifact[i] = 0;
-        detailloss[i] = 0;
+    float n2[3], d1[3];
+    [ForceUnroll]
+    for (int k = 0; k < 3; k++){
+        n2[k] = coefficients[36+k];
+        d1[k] = coefficients[39+k];
     }
 
-    for (int region_y = 0; region_y < gaussianTileY; region_y++){
-        for (int region_x = 0; region_x < gaussianTileX; region_x++){
-            im1p[region_y*gaussianTileX+region_x] = tampon[(threadIdx.y+gaussianSize+gaussianThy*region_y)*tamponWidth+threadIdx.x+gaussianSize+gaussianThx*region_x];
-            im2p[region_y*gaussianTileX+region_x] = tampon[tamponWidth*tamponHeight+(threadIdx.y+gaussianSize+gaussianThy*region_y)*tamponWidth+threadIdx.x+gaussianSize+gaussianThx*region_x];
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
+    // Compensated (Kahan) sums: a column can be thousands of pixels long.
+    float total[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    float compensation[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-    if (skipMap%2 == 0){
-        //product blur a*b
-        for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
-            tampon[tamponWidth*tamponHeight*2+i] = tampon[tamponWidth*tamponHeight+i]*tampon[i];
-        }
-        GroupMemoryBarrierWithGroupSync();
-        s12 = GaussianSmart_Device(threadIdx.x, threadIdx.y, tamponWidth*tamponHeight*2, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-
-        //sum squared blur (a+b)**2
-        float tmp;
-        for (int i = thid; i < tamponWidth*tamponHeight; i += gaussianThx*gaussianThy){
-            tmp = tampon[tamponWidth*tamponHeight+i]+tampon[i];
-            tampon[tamponWidth*tamponHeight*2+i] = tmp*tmp;
-        }
-        GroupMemoryBarrierWithGroupSync();
-        const float sumsquared[gaussianTileX*gaussianTileY] = GaussianSmart_Device(threadIdx.x, threadIdx.y, tamponWidth*tamponHeight*2, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-        //we can deduce a**2 + b**2 now following linearity of gaussian blur
-        for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
-            s11_s22[i] = sumsquared[i] - 2*s12[i];
-        }
-    }
-
-    //then we blur our im1buffer and im2buffer to get m1 and m2
-    m1 = GaussianSmart_Device(threadIdx.x, threadIdx.y, 0, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    m2 = GaussianSmart_Device(threadIdx.x, threadIdx.y, tamponWidth*tamponHeight, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-
-    //if (x == 0 && y == 0) printf("im1 %f im2 %f m1 %f m2 %f s12 %f s1122 %f\n", im1p, im2p, m1, m2, s12, s11_s22);
-    //now we have im1p, im2p, m1, m2 and (s12, s11_s22 if ssim enabled)
-    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
-        const int region_x = i%gaussianTileX;
-        const int region_y = i/gaussianTileX;
-        if (x+gaussianThx*region_x < width && y+gaussianThy*region_y < height){
-            if (skipMap%2==0){
-                const float m11 = m1[i]*m1[i];
-                const float m22 = m2[i]*m2[i];
-                const float m12 = m1[i]*m2[i];
-                const float m_diff = m1[i]-m2[i];
-                const float num_m = fma(m_diff, m_diff*-1.0f, 1.0f);
-                const float num_s = fma(s12[i] - m12, 2.0f, 0.0009f);
-                const float denom_s = s11_s22[i] - m11 - m22 + 0.0009f;
-                ssim[i] = max(1.0f - ((num_m * num_s)/denom_s), 0.0f);
-            }
-            //edge diff
-            const float v1 = (abs(im2p[i] - m2[i])+1.0f) / (abs(im1p[i] - m1[i])+1.0f) - 1.0f;
-            artifact[i] = max(v1, 0.0f);
-            detailloss[i] = max(v1*-1.0f, 0.0f);
-        }
-    }
-
-    //accumulation of values across the block, we use tampon for it which has size 1024*3 float > 256*6
-
-    tampon[thid] = 0;
-    tampon[thid+gaussianThx*gaussianThy] = 0;
-    tampon[thid+gaussianThx*gaussianThy*2] = 0;
-    tampon[thid+gaussianThx*gaussianThy*3] = 0;
-    tampon[thid+gaussianThx*gaussianThy*4] = 0;
-    tampon[thid+gaussianThx*gaussianThy*5] = 0;
-    for (int i = 0; i < gaussianTileX*gaussianTileY; i++){
-        tampon[thid] += ssim[i];
-        tampon[thid+gaussianThx*gaussianThy] += artifact[i];
-        tampon[thid+gaussianThx*gaussianThy*2] += detailloss[i];
-        tampon[thid+gaussianThx*gaussianThy*3] += (ssim[i]*ssim[i])*(ssim[i]*ssim[i]);
-        tampon[thid+gaussianThx*gaussianThy*4] += (artifact[i]*artifact[i])*(artifact[i]*artifact[i]);
-        tampon[thid+gaussianThx*gaussianThy*5] += (detailloss[i]*detailloss[i])*(detailloss[i]*detailloss[i]);
-    }
-    GroupMemoryBarrierWithGroupSync();
-    //now we need to do some pointer jumping to regroup every block sums;
-    int next = threadnum;
-    while (next > 1){
-        next /= 2;
-        if (thid < next){
-            for (uint i = 0; i < 6; i++){
-                tampon[thid+gaussianThx*gaussianThy*i] += tampon[thid+gaussianThx*gaussianThy*i+next];
+    if (x < width){
+        float y1[SIGNALS][3]; // outputs n-1 and n-2 of each term of each signal
+        float y2[SIGNALS][3];
+        [ForceUnroll]
+        for (int s = 0; s < SIGNALS; s++){
+            [ForceUnroll]
+            for (int k = 0; k < 3; k++){
+                y1[s][k] = 0.0f;
+                y2[s][k] = 0.0f;
             }
         }
+
+        for (int n = -RADIUS + 1; n < height; n++){
+            const int top = n - RADIUS - 1;
+            const int bottom = n + RADIUS - 1;
+            float blurred[SIGNALS];
+            [ForceUnroll]
+            for (int s = 0; s < SIGNALS; s++){
+                float* plane = rows + s*planeSize + x;
+                const float input = ((top >= 0) ? plane[(uint64_t)top*(uint64_t)width] : 0.0f) + ((bottom < height) ? plane[(uint64_t)bottom*(uint64_t)width] : 0.0f);
+                [ForceUnroll]
+                for (int k = 0; k < 3; k++){
+                    const float yk = fma(n2[k], input, fma(-d1[k], y1[s][k], -y2[s][k]));
+                    y2[s][k] = y1[s][k];
+                    y1[s][k] = yk;
+                }
+                blurred[s] = y1[s][0] + (y1[s][1] + y1[s][2]);
+            }
+            if (n >= 0){ //the first RADIUS-1 steps only fill the recurrence
+                const uint64_t pixel = (uint64_t)n*(uint64_t)width + (uint64_t)x;
+                const float mu1 = blurred[3];
+                const float mu2 = blurred[4];
+
+                // SSIMMap
+                const float mu11 = unfused(mu1*mu1, zero);
+                const float mu22 = unfused(mu2*mu2, zero);
+                const float mu12 = unfused(mu1*mu2, zero);
+                const float muDiff = mu1 - mu2;
+                const float num_m = 1.0f - unfused(muDiff*muDiff, zero);
+                const float num_s = 2.0f*(blurred[2] - mu12) + kC2;
+                const float denom_s = ((blurred[0] - mu11) + (blurred[1] - mu22)) + kC2;
+                const float ssim = max(1.0f - divide(unfused(num_m*num_s, zero), denom_s), 0.0f);
+
+                // EdgeDiffMap: (1 + |img2 - mu2|)/(1 + |img1 - mu1|) - 1, written as a difference over 1 + |img1 - mu1|
+                // so that float keeps the precision libjxl gets from double.
+                const float edge1 = abs(img1[pixel] - mu1);
+                const float edge2 = abs(img2[pixel] - mu2);
+                const float d = divide(edge2 - edge1, 1.0f + edge1);
+                const float artifact = max(d, 0.0f);
+                const float detailLost = max(-d, 0.0f);
+
+                const float values[6] = {ssim, artifact, detailLost, (ssim*ssim)*(ssim*ssim), (artifact*artifact)*(artifact*artifact), (detailLost*detailLost)*(detailLost*detailLost)};
+                [ForceUnroll]
+                for (int i = 0; i < 6; i++){
+                    const float v = values[i] - compensation[i];
+                    const float t = total[i] + v;
+                    compensation[i] = (t - total[i]) - v;
+                    total[i] = t;
+                }
+            }
+        }
+    }
+
+    [ForceUnroll]
+    for (int i = 0; i < 6; i++) partialSums[i][threadIdx.x] = total[i];
+    GroupMemoryBarrierWithGroupSync();
+    for (int next = THREADS/2; next > 0; next /= 2){
+        if (threadIdx.x < next){
+            [ForceUnroll]
+            for (int i = 0; i < 6; i++) partialSums[i][threadIdx.x] += partialSums[i][threadIdx.x + next];
+        }
         GroupMemoryBarrierWithGroupSync();
     }
-    if (thid == 0){
-        for (uint i = 0; i < 6; i++){
-            dst[i*bl_x*bl_y + blockIdx.y*bl_x + blockIdx.x] = tampon[gaussianThx*gaussianThy*i]/(width*height);
-        }
+    if (threadIdx.x == 0){
+        [ForceUnroll]
+        for (int i = 0; i < 6; i++) sums[6*blockIdx.x + i] = partialSums[i][0];
     }
 }

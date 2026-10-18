@@ -53,8 +53,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     //SSIMU2
     {"downsampleSSIMU2.spv", {"downsample"}},
     {"makeXYBSSIMU2.spv", {"rgb_to_positive_xyb"}},
-    {"sumreduceSSIMU2.spv", {"sumreduce"}},
-    {"scoreSSIMU2.spv", {"planescale_map"}},
+    {"scoreSSIMU2.spv", {"blurRows", "blurColumnsAndScore"}},
     //Butter
     {"gaussianBlurButter.spv", {"horizontalBlur", "verticalBlur", "TiledGaussianBlur"}},
     {"downupsampleButter.spv", {"downsample", "addsupersample2X"}},

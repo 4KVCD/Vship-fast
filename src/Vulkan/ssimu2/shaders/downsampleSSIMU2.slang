@@ -1,9 +1,10 @@
 import makeXYBSSIMU2;
 
+// Halves linear RGB like libjxl's Downsample (each output the mean of a 2x2 block, the last row and column
+// repeated) and converts the source scale to positive XYB in place, the smaller scale too when lastScale is set.
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void downsample(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* dst1, uniform float* dst2, uniform float* dst3, uniform uint64_t width, uniform uint64_t height, uniform uint64_t info){
-    //info is bit boolean (4 bits used) skipB skipY skipX result_XYB
+void downsample(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* dst1, uniform float* dst2, uniform float* dst3, uniform uint64_t width, uniform uint64_t height, uniform uint lastScale, uniform uint zero){
     uint64_t x = threadIdx.x + blockIdx.x*16; // < width >> 1 +1
     uint64_t y = threadIdx.y + blockIdx.y*16; // < height >> 1 +1
 
@@ -25,13 +26,13 @@ void downsample(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID,
     for (int i = 0; i < 4; i++){
         dst += srcData[i];
         //to later write srcData in XYB
-        srcData[i] = rgb_to_positive_xyb_d(srcData[i]);
+        srcData[i] = rgb_to_positive_xyb_d(srcData[i], zero);
     }
     dst *= 0.25f;
 
-    //done on last scale since the score won't be used for further downsampling
-    if ((info & 1u) != 0u){
-        dst = rgb_to_positive_xyb_d(dst);
+    //the smaller scale is converted by the next downsample, except for the last one
+    if (lastScale != 0){
+        dst = rgb_to_positive_xyb_d(dst, zero);
     }
 
     dst1[y * neww + x] = dst.x;
@@ -42,9 +43,9 @@ void downsample(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID,
     for (int dy = 0; dy < 2; dy++){
         for (int dx = 0; dx < 2; dx++){
             if (2*y+dy < height && 2*x+dx < width){
-                if ((info & 2u) == 0) src1[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].x;
-                if ((info & 4u) == 0) src2[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].y;
-                if ((info & 8u) == 0) src3[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].z;
+                src1[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].x;
+                src2[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].y;
+                src3[(2*y+dy)*width+2*x+dx] = srcData[dy*2+dx].z;
             }
         }
     }
