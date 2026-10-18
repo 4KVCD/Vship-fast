@@ -89,7 +89,7 @@ void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer c
 
         if (i == 2){
             //mf = blur(xyb-lf)
-            placeSubArray(deviceHelper, cmdBuff, src[i], lf[i], mf[i], width*height);
+            placeSubArray(deviceHelper, cmdBuff, src[i], lf[i], temp[0], width*height);
             placeBlur(deviceHelper, cmdBuff, mf[i], temp[0], temp[1], width, height, gaussianHandle, 3);
             break;
         }
