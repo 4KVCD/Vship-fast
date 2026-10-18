@@ -113,6 +113,19 @@ struct QueueFamily{
     uint maxHWQueueCount;
 };
 
+//A queue family that can only copy (the GPU's copy engines), if the device has one
+std::optional<uint32_t> findTransferOnlyQueueFamily(const VkPhysicalDevice& device){
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+    for (uint32_t i = 0; i < queueFamilyCount; i++){
+        const VkQueueFlags flags = queueFamilies[i].queueFlags;
+        if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))) return i;
+    }
+    return std::nullopt;
+}
+
 //choose so that we have the maximum number of concurrent queues available
 QueueFamily findQueueFamilies(const VkPhysicalDevice& device) {
     QueueFamily out;
@@ -417,6 +430,11 @@ class VkDeviceManager{
     //Butteraugli 24% and SSIMULACRA2 41% faster.
     VkQueue queue;
     std::mutex queueLock;
+    //Uploads go to a queue of a transfer-only family when the device has one: the copy engines then move the next
+    //frames over PCIe while the compute queue works on the current one. Without one, uploadQueue is queue.
+    std::optional<uint32_t> transferFamily;
+    VkQueue uploadQueue;
+    std::mutex uploadQueueLock;
     VkPipelineLayout pipelineLayout;
     //memory managment elemnts
     VmaAllocator vmaAllocator;
@@ -435,18 +453,20 @@ class VkDeviceManager{
         return res;
     }
     void createLogicalDevice(VkPhysicalDevice& physicalDevice){
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = queueFamily.indices.value();
-        queueCreateInfo.queueCount = 1;
         const float queuePriority = 1.f;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        VkDeviceQueueCreateInfo queueCreateInfos[2] = {};
+        queueCreateInfos[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfos[0].queueFamilyIndex = queueFamily.indices.value();
+        queueCreateInfos[0].queueCount = 1;
+        queueCreateInfos[0].pQueuePriorities = &queuePriority;
+        queueCreateInfos[1] = queueCreateInfos[0];
+        if (transferFamily.has_value()) queueCreateInfos[1].queueFamilyIndex = transferFamily.value();
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-        createInfo.pQueueCreateInfos = &queueCreateInfo;
-        createInfo.queueCreateInfoCount = 1;
+        createInfo.pQueueCreateInfos = queueCreateInfos;
+        createInfo.queueCreateInfoCount = transferFamily.has_value() ? 2 : 1;
 
         createInfo.pNext = &requiredFeatures;
         createInfo.pEnabledFeatures = nullptr;
@@ -455,6 +475,8 @@ class VkDeviceManager{
             THROW_ERROR("failed to create logical device!");
         }
         vkGetDeviceQueue(device, queueFamily.indices.value(), 0, &queue);
+        uploadQueue = queue;
+        if (transferFamily.has_value()) vkGetDeviceQueue(device, transferFamily.value(), 0, &uploadQueue);
     }
     void initVmaAllocator(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         VmaAllocatorCreateInfo createInfo{};
@@ -487,6 +509,13 @@ class VkDeviceManager{
         bufferInfo.pNext = NULL;
         bufferInfo.size = size;
         bufferInfo.usage = bufferFlags | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        //buffers are used by both queue families when there is a transfer queue
+        const uint32_t families[2] = {queueFamily.indices.value(), transferFamily.value_or(0)};
+        if (transferFamily.has_value()){
+            bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            bufferInfo.queueFamilyIndexCount = 2;
+            bufferInfo.pQueueFamilyIndices = families;
+        }
  
         VmaAllocationCreateInfo allocInfo = {};
         allocInfo.usage = vmaAllocationUsage;
@@ -517,6 +546,7 @@ class VkDeviceManager{
 public:
     VkDeviceManager(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         queueFamily = findQueueFamilies(physicalDevice);
+        transferFamily = findTransferOnlyQueueFamily(physicalDevice);
         createLogicalDevice(physicalDevice);
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
         initVmaAllocator(instance, physicalDevice);
@@ -524,6 +554,12 @@ public:
     }
     VkCommandPoolManager* createCmdPool(uint bufferNbPrimary, uint bufferNbSecondary){
         return new VkCommandPoolManager(bufferNbPrimary, bufferNbSecondary, device, queueFamily);
+    }
+    //command buffers for executeUploadThenBuffers' upload: copy commands only
+    VkCommandPoolManager* createUploadCmdPool(uint bufferNbPrimary){
+        QueueFamily uploadFamily = queueFamily;
+        if (transferFamily.has_value()) uploadFamily.indices = transferFamily.value();
+        return new VkCommandPoolManager(bufferNbPrimary, 0, device, uploadFamily);
     }
     VkShaderModule loadShaderModule(std::string filename){
         //reading file
@@ -810,6 +846,33 @@ public:
     }
     //execute all given cmdbuffs in order with the provided numBuff-1 semaphores
     void executeBuffers(VkCommandBuffer* cmdbuffs, VkSemaphore* semaphores, uint numBuff, FenceManager* fence){
+        submitChain(cmdbuffs, semaphores, numBuff, fence, NULL);
+    }
+    //upload (from createUploadCmdPool) signals uploaded, then cmdbuffs run like in executeBuffers, the first one
+    //waiting for uploaded
+    void executeUploadThenBuffers(VkCommandBuffer upload, VkSemaphore uploaded, VkCommandBuffer* cmdbuffs, VkSemaphore* semaphores, uint numBuff, FenceManager* fence){
+        VkSemaphoreSubmitInfo uploadedInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        uploadedInfo.semaphore = uploaded;
+        uploadedInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        VkCommandBufferSubmitInfo uploadBuffer{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        uploadBuffer.commandBuffer = upload;
+        VkSubmitInfo2 uploadSubmit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        uploadSubmit.commandBufferInfoCount = 1;
+        uploadSubmit.pCommandBufferInfos = &uploadBuffer;
+        uploadSubmit.signalSemaphoreInfoCount = 1;
+        uploadSubmit.pSignalSemaphoreInfos = &uploadedInfo;
+
+        std::mutex& lock = transferFamily.has_value() ? uploadQueueLock : queueLock;
+        lock.lock();
+        if (vkQueueSubmit2(uploadQueue, 1, &uploadSubmit, VK_NULL_HANDLE) != VK_SUCCESS) {
+            lock.unlock();
+            THROW_ERROR("Failed to Submit commandBuffer to queue");
+        }
+        lock.unlock();
+        submitChain(cmdbuffs, semaphores, numBuff, fence, &uploadedInfo);
+    }
+    //cmdbuffs in order on the compute queue, linked by the numBuff-1 semaphores; the first waits for firstWait if any
+    void submitChain(VkCommandBuffer* cmdbuffs, VkSemaphore* semaphores, uint numBuff, FenceManager* fence, const VkSemaphoreSubmitInfo* firstWait){
         std::vector<VkSubmitInfo2> createInfos(numBuff);
         std::vector<VkCommandBufferSubmitInfo> createInfosBuffers(numBuff);
         std::vector<VkSemaphoreSubmitInfo> createInfosSemaphore(numBuff-1);
@@ -832,8 +895,9 @@ public:
             createInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
             createInfo.pNext = NULL;
             createInfo.flags = 0;
-            createInfo.waitSemaphoreInfoCount = (i == 0) ? 0 : 1;
-            createInfo.pWaitSemaphoreInfos = (i==0) ? NULL : &createInfosSemaphore[i-1];
+            const VkSemaphoreSubmitInfo* wait = (i == 0) ? firstWait : &createInfosSemaphore[i-1];
+            createInfo.waitSemaphoreInfoCount = (wait == NULL) ? 0 : 1;
+            createInfo.pWaitSemaphoreInfos = wait;
             createInfo.signalSemaphoreInfoCount = (i == numBuff-1) ? 0: 1;
             createInfo.pSignalSemaphoreInfos = (i == numBuff-1) ? NULL : &createInfosSemaphore[i];
             createInfo.commandBufferInfoCount = 1;

@@ -84,6 +84,8 @@ class SSIMU2ComputingImplementation{
 
     VshipDeviceHelper* deviceHelper;
     VkCommandPoolManager* commandPool; //contains 3 buffers -> preprocess, runtime frame To Gpu, runtime ssimu2 process
+    VkCommandPoolManager* uploadPool; //one buffer for the copies of the input frames
+    VkSemaphore uploadSemaphore;
     VkDeviceAddress mem_d;
     VkDeviceAddress converterTempMemory;
     FenceManager* fence;
@@ -93,6 +95,7 @@ public:
     void init(Vship_Colorspace_t source_colorspace, Vship_Colorspace_t source_colorspace2, int gpu_id){
         this->deviceHelper = getGlobalVulkanInstance().get(gpu_id);
         commandPool = deviceHelper->device.createCmdPool(3, 0);
+        uploadPool = deviceHelper->device.createUploadCmdPool(1);
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
         this->width = VshipColorConvert::getColorspaceWidth(source_colorspace);
         this->height = VshipColorConvert::getColorspaceHeight(source_colorspace);
@@ -111,6 +114,7 @@ public:
 
         fence = deviceHelper->device.createFence();
         semaphore = deviceHelper->device.createSemaphores();
+        uploadSemaphore = deviceHelper->device.createSemaphores();
 
         //here we define the final destination of our color converted frames
         //libjxl's input arithmetic: libjxl is the reference of this metric
@@ -150,8 +154,10 @@ public:
         converter1.destroy();
         converter2.destroy();
         delete commandPool;
+        delete uploadPool;
         delete fence;
         deviceHelper->device.destroySemaphores(semaphore);
+        deviceHelper->device.destroySemaphores(uploadSemaphore);
         deviceHelper->device.freeDevice(mem_d);
         deviceHelper->device.freeDevice(converterTempMemory);
         deviceHelper->device.freeHost((void*)sumsCPU);
@@ -159,16 +165,22 @@ public:
     double run(const uint8_t* srcp1[3], const uint8_t* srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
 
-        //create bufferToGPU
+        //copies to the GPU on the upload queue, conversion to float at the start of the compute work
+        VkCommandBuffer uploadCmd = uploadPool->primaryCommandBuffers[0];
+        resetCmdBuffer(uploadCmd);
+        beginCmdBuffer(uploadCmd);
+        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
+        converter1.placeUpload(uploadCmd, srcp1, lineSize, converterTempMemory);
+        converter2.placeUpload(uploadCmd, srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        endCmdBuffer(uploadCmd);
         resetCmdBuffer(cmdBuffs[1]);
         beginCmdBuffer(cmdBuffs[1]);
-        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        converter1.placeToGPUBuffer(cmdBuffs[1], srcp1, lineSize, converterTempMemory);
-        converter2.placeToGPUBuffer(cmdBuffs[1], srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        converter1.placeToFloat(cmdBuffs[1]);
+        converter2.placeToFloat(cmdBuffs[1]);
         endCmdBuffer(cmdBuffs[1]);
 
         //now we can execute cmdBuffs1 and 2 but synchronized by semaphore
-        deviceHelper->device.executeBuffers(cmdBuffs.data()+1, &semaphore, 2, fence);
+        deviceHelper->device.executeUploadThenBuffers(uploadCmd, uploadSemaphore, cmdBuffs.data()+1, &semaphore, 2, fence);
         //then we have nothing else to do that wait
         fence->synchronize();
         //the sums should be in sumsCPU

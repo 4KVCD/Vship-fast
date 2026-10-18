@@ -53,6 +53,9 @@ class Converter{
     size_t lazyReceiverSize = 0;
     VkDeviceAddress outPlanes[3]; //plane on which to put the data in the end will be given upfront
     VkDeviceAddress intermediatePlanes[3]; //can be either newly allocated or copy of outPlanes
+    VkDeviceAddress uploadedPlanes[3]; //the input planes as copied by placeUpload, and their line sizes
+    int64_t uploadedLineSize[3];
+    size_t uploadedSize = 0;
 
     bool isCropped;
     bool isResized;
@@ -142,51 +145,65 @@ public:
         uint maxplaneBuffer = 2;
         return sizeof(float)*maxWidth*maxHeight*maxplaneBuffer;
     }
-    //performs a memcpy from inp in the case it's not host but doesnt otherwise
-    //tempDevice will be used up to getTempMemoryNeeded in case stride is small enough to make it fit. Otherwise, lazy alloc memory
-    void placeToGPUBuffer(VkCommandBuffer cmdbuff, const uint8_t* inp[3], const int64_t lineSize[3], VkDeviceAddress tempDevice){
+    //Puts the 3 input planes on the GPU: the CPU copies them to pinned memory unless they already are, and uploadCmd
+    //gets the copy commands, so it can be a command buffer of the device's upload queue. placeToFloat converts
+    //them afterwards. The copies go to tempDevice when they fit in getTempMemoryNeeded(), else to a lazily
+    //allocated buffer.
+    void placeUpload(VkCommandBuffer uploadCmd, const uint8_t* inp[3], const int64_t lineSize[3], VkDeviceAddress tempDevice){
         const uint64_t plane_widths[3] = {width, ((width-1) >> source_colorspace.subsampling.subw)+1, ((width-1) >> source_colorspace.subsampling.subw)+1};
         const uint64_t plane_heights[3] = {height, ((height-1) >> source_colorspace.subsampling.subh)+1, ((height-1) >> source_colorspace.subsampling.subh)+1};
         const uint byteSize = bytesizeSample(source_colorspace.sample);
-        size_t maxByteSizeToCopy = 0;
-        size_t lazyPinnedRequiredSize = 0;
+        const size_t alignment = 16; //each plane's copy starts aligned for the conversion kernel's reads
+        size_t bytesToCopy[3];
+        size_t uploadSize = 0;
         bool isHostAllocated = true;
         for (uint i = 0; i < 3; i++){
-            const size_t bytesToCopy = lineSize[i]*plane_heights[i] - (lineSize[i] - byteSize*plane_widths[i]);
-            maxByteSizeToCopy = std::max(bytesToCopy, maxByteSizeToCopy);
-            lazyPinnedRequiredSize += bytesToCopy;
+            bytesToCopy[i] = lineSize[i]*plane_heights[i] - (lineSize[i] - byteSize*plane_widths[i]);
+            uploadSize += (bytesToCopy[i] + alignment - 1)/alignment*alignment;
             if (!deviceHelper->device.isHostAllocated(inp[i])){
                 isHostAllocated = false;
             }
         }
-        VkDeviceAddress src_d; //receiver
-        if (maxByteSizeToCopy <= getTempMemoryNeeded()){
-            src_d = tempDevice;
-        } else {
-            src_d = getLazyDevice(maxByteSizeToCopy);
-        }
+        const VkDeviceAddress uploadBuffer = (uploadSize <= getTempMemoryNeeded()) ? tempDevice : getLazyDevice(uploadSize);
+
         const uint8_t* src[3] = {inp[0], inp[1], inp[2]};
-        uint8_t* lazyPinned = isHostAllocated ? NULL : getLazyPinned(lazyPinnedRequiredSize);
-        size_t offsetPinned = 0;
         if (!isHostAllocated){
+            uint8_t* lazyPinned = getLazyPinned(bytesToCopy[0] + bytesToCopy[1] + bytesToCopy[2]);
+            size_t offsetPinned = 0;
             for (uint i = 0; i < 3; i++){
-                const size_t bytesToCopy = lineSize[i]*plane_heights[i] - (lineSize[i] - byteSize*plane_widths[i]);
                 src[i] = lazyPinned+offsetPinned;
-                memcpy(lazyPinned+offsetPinned, inp[i], bytesToCopy);
-                offsetPinned += bytesToCopy;
+                memcpy(lazyPinned+offsetPinned, inp[i], bytesToCopy[i]);
+                offsetPinned += bytesToCopy[i];
             }
         }
         //src contains our data, always host allocated
+        size_t offset = 0;
         for (uint i = 0; i < 3; i++){
-            const size_t bytesToCopy = lineSize[i]*plane_heights[i] - (lineSize[i] - byteSize*plane_widths[i]);
-            deviceHelper->device.memCpyHtoD(cmdbuff, src_d, src[i], bytesToCopy);
-            deviceHelper->device.placeMemoryBarriers(cmdbuff, {{src_d, bytesToCopy, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
-            placeConvertToFloatPlane(deviceHelper, cmdbuff, intermediatePlanes[i], src_d, lineSize[i], plane_widths[i], plane_heights[i], source_colorspace.sample, source_colorspace.range, source_colorspace.colorFamily, (bool)(i != 0), libjxlArithmetic);
-            deviceHelper->device.placeMemoryBarriers(cmdbuff, {
-                {src_d, bytesToCopy, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-                {intermediatePlanes[i], sizeof(float)*plane_widths[i]*plane_heights[i], VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-            });
+            uploadedPlanes[i] = uploadBuffer + offset;
+            uploadedLineSize[i] = lineSize[i];
+            deviceHelper->device.memCpyHtoD(uploadCmd, uploadedPlanes[i], src[i], bytesToCopy[i]);
+            offset += (bytesToCopy[i] + alignment - 1)/alignment*alignment;
         }
+        uploadedSize = offset;
+    }
+    //Converts the planes copied by placeUpload to float. cmdbuff must run after the upload has completed.
+    void placeToFloat(VkCommandBuffer cmdbuff){
+        const uint64_t plane_widths[3] = {width, ((width-1) >> source_colorspace.subsampling.subw)+1, ((width-1) >> source_colorspace.subsampling.subw)+1};
+        const uint64_t plane_heights[3] = {height, ((height-1) >> source_colorspace.subsampling.subh)+1, ((height-1) >> source_colorspace.subsampling.subh)+1};
+        for (uint i = 0; i < 3; i++){
+            placeConvertToFloatPlane(deviceHelper, cmdbuff, intermediatePlanes[i], uploadedPlanes[i], uploadedLineSize[i], plane_widths[i], plane_heights[i], source_colorspace.sample, source_colorspace.range, source_colorspace.colorFamily, (bool)(i != 0), libjxlArithmetic);
+        }
+        std::vector<MemoryBarrierPipeline> barriers = {{uploadedPlanes[0], uploadedSize, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}};
+        for (uint i = 0; i < 3; i++){
+            barriers.push_back({intermediatePlanes[i], sizeof(float)*plane_widths[i]*plane_heights[i], VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT});
+        }
+        deviceHelper->device.placeMemoryBarriers(cmdbuff, barriers);
+    }
+    //placeUpload and placeToFloat in the same command buffer
+    void placeToGPUBuffer(VkCommandBuffer cmdbuff, const uint8_t* inp[3], const int64_t lineSize[3], VkDeviceAddress tempDevice){
+        placeUpload(cmdbuff, inp, lineSize, tempDevice);
+        deviceHelper->device.placeMemoryBarriers(cmdbuff, {{uploadedPlanes[0], uploadedSize, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
+        placeToFloat(cmdbuff);
     }
     bool workConvertInPlace(){
         return !isResized && !isCropped;

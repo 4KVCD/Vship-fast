@@ -152,6 +152,8 @@ class ButterComputingImplementation{
 
     VshipDeviceHelper* deviceHelper;
     VkCommandPoolManager* commandPool; //contains 3 buffers -> preprocess, runtime frame To Gpu, runtime ssimu2 process
+    VkCommandPoolManager* uploadPool; //one buffer for the copies of the input frames
+    VkSemaphore uploadSemaphore;
     VkDeviceAddress mem_d;
     VkDeviceAddress converterTempMemory;
     FenceManager* fence;
@@ -178,6 +180,7 @@ public:
         this->Qnorm = Qnorm;
         this->intensity_multiplier = intensity_multiplier;
         commandPool = deviceHelper->device.createCmdPool(4, 0);
+        uploadPool = deviceHelper->device.createUploadCmdPool(1);
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
         this->width = VshipColorConvert::getColorspaceWidth(source_colorspace);
         this->height = VshipColorConvert::getColorspaceHeight(source_colorspace);
@@ -198,6 +201,7 @@ public:
         semaphores.resize(2);
         semaphores[0] = deviceHelper->device.createSemaphores();
         semaphores[1] = deviceHelper->device.createSemaphores();
+        uploadSemaphore = deviceHelper->device.createSemaphores();
 
         //here we define the final destination of our color converted frames
         //libjxl's input arithmetic: libjxl is the reference of this metric
@@ -236,9 +240,11 @@ public:
         converter1.destroy();
         converter2.destroy();
         delete commandPool;
+        delete uploadPool;
         delete fence;
         deviceHelper->device.destroySemaphores(semaphores[0]);
         deviceHelper->device.destroySemaphores(semaphores[1]);
+        deviceHelper->device.destroySemaphores(uploadSemaphore);
         deviceHelper->device.freeDevice(mem_d);
         if (outputCPU != NULL) deviceHelper->device.freeHost((void*)outputCPU);
         deviceHelper->device.freeHost((void*)outputScoresCPU);
@@ -248,12 +254,18 @@ public:
         //we need to record buffer 1 and 3, where 1 is putting frame on GPU and 3 is retrieving distmap if wanted
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
 
-        //create bufferToGPU
+        //copies to the GPU on the upload queue, conversion to float at the start of the compute work
+        VkCommandBuffer uploadCmd = uploadPool->primaryCommandBuffers[0];
+        resetCmdBuffer(uploadCmd);
+        beginCmdBuffer(uploadCmd);
+        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
+        converter1.placeUpload(uploadCmd, srcp1, lineSize, converterTempMemory);
+        converter2.placeUpload(uploadCmd, srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        endCmdBuffer(uploadCmd);
         resetCmdBuffer(cmdBuffs[1]);
         beginCmdBuffer(cmdBuffs[1]);
-        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        converter1.placeToGPUBuffer(cmdBuffs[1], srcp1, lineSize, converterTempMemory);
-        converter2.placeToGPUBuffer(cmdBuffs[1], srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        converter1.placeToFloat(cmdBuffs[1]);
+        converter2.placeToFloat(cmdBuffs[1]);
         endCmdBuffer(cmdBuffs[1]);
         
         bool isHostAllocated;
@@ -270,7 +282,7 @@ public:
         }
 
         //now we can execute cmdBuffs1, 2 and eventually 3 but synchronized by semaphores
-        deviceHelper->device.executeBuffers(cmdBuffs.data()+1, semaphores.data(), (dstp != NULL) ? 3 : 2, fence);
+        deviceHelper->device.executeUploadThenBuffers(uploadCmd, uploadSemaphore, cmdBuffs.data()+1, semaphores.data(), (dstp != NULL) ? 3 : 2, fence);
         //then we have nothing else to do that wait
         fence->synchronize();
         //output should be in outputCPU
