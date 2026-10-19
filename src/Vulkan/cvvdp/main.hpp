@@ -383,29 +383,39 @@ public:
         size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
         converter1.placeToFloat(cmdBuff);
         converter2.placeToFloat(cmdBuff);
-        converter1.placeConvert(cmdBuff, converterTempMemory);
-        converter2.placeConvert(cmdBuff, converterTempMemory+tempSizeConverter1);
 
-        //resize as early as possible if source bigger than resize; the colour conversion then works in the ring
-        VkDeviceAddress* colorSrc1_d = src1_d;
-        VkDeviceAddress* colorSrc2_d = src2_d;
-        if (source_width > resize_width){
-            for (int i = 0; i < 3; i++){
-                placeResizePlane(deviceHelper, cmdBuff, filterSrc1_d[i], resizeTemp[0], base_plane1[i], source_width, source_height, resize_width, resize_height);
-                placeResizePlane(deviceHelper, cmdBuff, filterSrc2_d[i], resizeTemp[1], base_plane2[i], source_width, source_height, resize_width, resize_height);
-            }
-            colorSrc1_d = filterSrc1_d;
-            colorSrc2_d = filterSrc2_d;
-        }
-
-        //the planes, of size minimum of source and resize, through the display model to DKL, into the ring
+        //each image's planes, of size minimum of source and resize, through the display model to DKL, into the ring.
+        //Without a resize first (the source is not larger than the display), that is one pass from the converter's
+        //luma and chroma (placeYUVToDKL). Otherwise the converter writes linear RGB, the frame is resized into the
+        //ring and converted to DKL there.
         const float Y_peak = model->max_luminance;
         const float Y_black = model->getBlackLevel();
         const float Y_refl = model->getReflLevel();
         const float exposure = model->exposure;
         const DisplayColorspace isHDR = model->colorspace;
-        placeDisplayToDKL(deviceHelper, cmdBuff, colorSrc1_d, filterSrc1_d, minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, ref_colorspace.transferFunction, isHDR, ref_colorspace.primaries);
-        placeDisplayToDKL(deviceHelper, cmdBuff, colorSrc2_d, filterSrc2_d, minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, dis_colorspace.transferFunction, isHDR, dis_colorspace.primaries);
+        const bool resizeFirst = source_width > resize_width;
+        VshipColorConvert::Converter* converters[2] = {&converter1, &converter2};
+        const VkDeviceAddress converterTemps[2] = {converterTempMemory, converterTempMemory+tempSizeConverter1};
+        VkDeviceAddress* srcs_d[2] = {src1_d, src2_d};
+        VkDeviceAddress* filterSrcs_d[2] = {filterSrc1_d, filterSrc2_d};
+        VkDeviceAddress* base_planes[2] = {base_plane1, base_plane2};
+        const Vship_Colorspace_t* colorspaces[2] = {&ref_colorspace, &dis_colorspace};
+        for (int k = 0; k < 2; k++){
+            VshipColorConvert::Converter::PixelConversion conversion;
+            if (!resizeFirst && converters[k]->outputIsPixelConversion() && converters[k]->placeChromaForPixelConversion(cmdBuff, converterTemps[k], conversion)){
+                placeYUVToDKL(deviceHelper, cmdBuff, conversion, filterSrcs_d[k], source_width, source_height, Y_peak, Y_black, Y_refl, exposure, colorspaces[k]->transferFunction, isHDR, colorspaces[k]->primaries);
+                continue;
+            }
+            converters[k]->placeConvert(cmdBuff, converterTemps[k]);
+            VkDeviceAddress* colorSrc_d = srcs_d[k];
+            if (resizeFirst){
+                for (int i = 0; i < 3; i++){
+                    placeResizePlane(deviceHelper, cmdBuff, filterSrcs_d[k][i], resizeTemp[k], base_planes[k][i], source_width, source_height, resize_width, resize_height);
+                }
+                colorSrc_d = filterSrcs_d[k];
+            }
+            placeDisplayToDKL(deviceHelper, cmdBuff, colorSrc_d, filterSrcs_d[k], minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, colorspaces[k]->transferFunction, isHDR, colorspaces[k]->primaries);
+        }
         //and we are done, the frame is loaded in the ring with the right colorspace, next step is temporal filtering
 
         const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());

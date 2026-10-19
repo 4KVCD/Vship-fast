@@ -249,7 +249,7 @@ shaderBuild: .FORCE
 	slangc src/Vulkan/cvvdp/shaders/lpyr.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry gaussPyrReduce -entry gaussPyrExpand -entry baseBandPyrRefine -o libvshipSpvShaders/lpyrCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/fromLpyrToCSF.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry fromPyrReduceToCSF -o libvshipSpvShaders/fromLpyrToCSFCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/pooling.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry reduceSum -entry reduceSums -o libvshipSpvShaders/poolingCVVDP.spv
-	slangc src/Vulkan/cvvdp/shaders/colors.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry displayToDKL -o libvshipSpvShaders/colorsCVVDP.spv
+	slangc src/Vulkan/cvvdp/shaders/colors.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry displayToDKL -entry yuvToDKL -o libvshipSpvShaders/colorsCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/maskingModel.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry preGaussianPreCompute -entry computeD -entry computeD_baseband -o libvshipSpvShaders/maskingModelCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/temporalFilter.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry temporalConvolutionKernel_d -o libvshipSpvShaders/temporalFilterCVVDP.spv
 	slangc src/Vulkan/cvvdp/shaders/resize.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry horizontalResizeTranspose -o libvshipSpvShaders/resizeCVVDP.spv
