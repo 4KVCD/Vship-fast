@@ -411,9 +411,12 @@ class VkDeviceManager{
     VkPhysicalDeviceMemoryProperties memProps;
     VkDevice device;
     QueueFamily queueFamily;
-    std::vector<VkQueue> deviceQueues;
-    std::mutex* queueLocks;
-    int queueID = 0; std::mutex queueIDLock;
+    //All the work of the device goes to one queue. Frames submitted by different threads then run back to back
+    //while the CPU side of each frame overlaps the GPU work of the others. Spreading submissions over several
+    //queues made the GPU switch between them instead: with 3 threads on an RTX 3070 under Windows, one queue made
+    //Butteraugli 24% and SSIMULACRA2 41% faster.
+    VkQueue queue;
+    std::mutex queueLock;
     VkPipelineLayout pipelineLayout;
     //memory managment elemnts
     VmaAllocator vmaAllocator;
@@ -435,9 +438,9 @@ class VkDeviceManager{
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily.indices.value();
-        queueCreateInfo.queueCount = queueFamily.maxHWQueueCount;
-        std::vector<float> queuePriorities(queueFamily.maxHWQueueCount, 1.f);
-        queueCreateInfo.pQueuePriorities = queuePriorities.data();
+        queueCreateInfo.queueCount = 1;
+        const float queuePriority = 1.f;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -451,11 +454,7 @@ class VkDeviceManager{
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
             THROW_ERROR("failed to create logical device!");
         }
-        deviceQueues.resize(queueFamily.maxHWQueueCount);
-        for (int i = 0; i < queueFamily.maxHWQueueCount; i++){
-            vkGetDeviceQueue(device, queueFamily.indices.value(), i, deviceQueues.data()+i);
-        }
-        queueLocks = new std::mutex[queueFamily.maxHWQueueCount];
+        vkGetDeviceQueue(device, queueFamily.indices.value(), 0, &queue);
     }
     void initVmaAllocator(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         VmaAllocatorCreateInfo createInfo{};
@@ -787,11 +786,6 @@ public:
         vkDestroySemaphore(device, a, nullptr);
     }
     void executeBuffer(VkCommandBuffer cmdbuff, FenceManager* fence){
-        queueIDLock.lock();
-        int myQueueID = queueID;
-        queueID = (queueID+1)%deviceQueues.size();
-        queueIDLock.unlock();
-
         VkSubmitInfo2 createInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
         createInfo.pNext = NULL;
         createInfo.flags = 0;
@@ -807,20 +801,15 @@ public:
         createInfo.commandBufferInfoCount = 1;
         createInfo.pCommandBufferInfos = &cmdBufferInfo;
 
-        queueLocks[myQueueID].lock();
-        if (vkQueueSubmit2(deviceQueues[myQueueID], 1, &createInfo, fence->fence) != VK_SUCCESS) {
-            queueLocks[myQueueID].unlock();
+        queueLock.lock();
+        if (vkQueueSubmit2(queue, 1, &createInfo, fence->fence) != VK_SUCCESS) {
+            queueLock.unlock();
             THROW_ERROR("Failed to Submit commandBuffer to queue");
         }
-        queueLocks[myQueueID].unlock();
+        queueLock.unlock();
     }
     //execute all given cmdbuffs in order with the provided numBuff-1 semaphores
     void executeBuffers(VkCommandBuffer* cmdbuffs, VkSemaphore* semaphores, uint numBuff, FenceManager* fence){
-        queueIDLock.lock();
-        int myQueueID = queueID;
-        queueID = (queueID+1)%deviceQueues.size();
-        queueIDLock.unlock();
-
         std::vector<VkSubmitInfo2> createInfos(numBuff);
         std::vector<VkCommandBufferSubmitInfo> createInfosBuffers(numBuff);
         std::vector<VkSemaphoreSubmitInfo> createInfosSemaphore(numBuff-1);
@@ -851,12 +840,12 @@ public:
             createInfo.pCommandBufferInfos = createInfosBuffers.data()+i;
         }
 
-        queueLocks[myQueueID].lock();
-        if (vkQueueSubmit2(deviceQueues[myQueueID], numBuff, createInfos.data(), fence->fence) != VK_SUCCESS) {
-            queueLocks[myQueueID].unlock();
+        queueLock.lock();
+        if (vkQueueSubmit2(queue, numBuff, createInfos.data(), fence->fence) != VK_SUCCESS) {
+            queueLock.unlock();
             THROW_ERROR("Failed to Submit commandBuffer to queue");
         }
-        queueLocks[myQueueID].unlock();
+        queueLock.unlock();
     }
     ~VkDeviceManager(){
 #ifndef _WIN32
@@ -864,7 +853,6 @@ public:
         vmaDestroyAllocator(vmaAllocator);
         vkDestroyDevice(device, nullptr);
 #endif
-        delete[] queueLocks;
     }
 };
 
