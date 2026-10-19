@@ -25,7 +25,7 @@ void placeComputeD(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkD
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["maskingModelCVVDP.spv:computeD"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, out0, out1, out2, out3, R0, R1, R2, R3, T0, T1, T2, T3, width, height, gaussianhandle.gaussiankernel_d, gaussianhandle.gaussiankernel_integral_d);
+    fillKernelArguments(0, kernelArguments, out0, out1, out2, out3, R0, R1, R2, R3, T0, T1, T2, T3, width, height, gaussianhandle.gaussiankernel_d);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {out0, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
