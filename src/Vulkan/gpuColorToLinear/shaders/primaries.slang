@@ -29,9 +29,10 @@ float3 primariesToXYZ(float3 a, Vship_Primaries_t primarySource){
             return res;
         }
         case Vship_Primaries_t.Vship_PRIMARIES_BT709:{
-            res.x = fma(a.x, 0.4124f, fma(a.y, 0.3576f, a.z*0.1805f));
-            res.y = fma(a.x, 0.2126f, fma(a.y, 0.7152f, a.z*0.0722f));
-            res.z = fma(a.x, 0.0193f, fma(a.y, 0.1192f, a.z*0.9505f));
+            //sRGB's matrix with the precision pycvvdp uses (its color_spaces.json, from brucelindbloom.com)
+            res.x = fma(a.x, 0.4124564f, fma(a.y, 0.3575761f, a.z*0.1804375f));
+            res.y = fma(a.x, 0.2126729f, fma(a.y, 0.7151522f, a.z*0.072175f));
+            res.z = fma(a.x, 0.0193339f, fma(a.y, 0.119192f, a.z*0.9503041f));
             return res;
         }
         case Vship_Primaries_t.Vship_PRIMARIES_BT2020:{
