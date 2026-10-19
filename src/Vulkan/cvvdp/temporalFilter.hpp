@@ -2,11 +2,11 @@
 
 namespace cvvdp{
 
-//will write on its input but put it back as before
-//if inp is of size less than N/2, remaining values are counted as 0
+//Inverse of a real FFT of length size (like numpy/torch irfft) followed by an fftshift, from its first
+//inp.size() coefficients; the missing ones count as 0.
 std::vector<float> inverseRealFourrierTransform(std::vector<float> inp, uint size){
-    //ahead normalization process for reversing a FFT
-    if (inp.size() > size/2){
+    //every coefficient but the DC one, and the Nyquist one when size is even, stands for itself and its mirror
+    if (size%2 == 0 && inp.size() > size/2){
         inp[size/2] /= 2;
     }
     inp[0] /= 2;
@@ -18,12 +18,6 @@ std::vector<float> inverseRealFourrierTransform(std::vector<float> inp, uint siz
             res[(i+inp.size()-1)%size] += 2*inp[k]*std::cos(2*PI*k*i/size)/size; //2/N is normalization factor and exceptions are handled before
         }
     }
-
-    //putting back inp as before, except if inp values were reaching float lower limits, it should be lossless
-    if (inp.size() > size/2){
-        inp[size/2] *= 2;
-    }
-    inp[0] *= 2;
 
     return res;
 }
@@ -47,7 +41,8 @@ public:
         int fourrier_size = size/2 + 1; //only uses real FT
         
         std::vector<float> freq(fourrier_size);
-        for (int i = 0; i < fourrier_size; i++) freq[i] = fps*i/(2*fourrier_size);
+        //the frequencies of the real FFT's coefficients, 0 to fps/2 (pycvvdp's linspace(0, fps/2, fourrier_size))
+        for (int i = 0; i < fourrier_size; i++) freq[i] = (fourrier_size > 1) ? (fps/2)*i/(fourrier_size-1) : 0.f;
 
         //Y sustained, rg sustained, yv sustained, Y transient
         std::vector<float> filters_fftdomain[4];
