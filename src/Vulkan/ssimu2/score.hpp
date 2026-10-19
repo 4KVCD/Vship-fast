@@ -114,6 +114,7 @@ const double weights[108] = {
 };
 
 constexpr int scoreThreads = 64; //THREADS in shaders/scoreSSIMU2.slang: the columns of one workgroup
+constexpr int scoreRowGroup = 16; //ROW_GROUP in shaders/scoreSSIMU2.slang: the rows of one workgroup of blurRows
 constexpr int sumsPerWorkgroup = 6;
 
 //Like libjxl, a scale is only scored when the scale above it (or the image, for the first) is at least 8x8.
@@ -139,50 +140,69 @@ int64_t sumsSize(int64_t width, int64_t height){
     return result;
 }
 
-//Working memory of the score kernels: the 5 horizontally blurred signals of one plane at the full scale.
-int64_t tempAllocsizeScore(int64_t width, int64_t height){
-    return 5*width*height;
+//Floats of the 5 horizontally blurred signals of the planes the score kernels work on at once: one plane at the full
+//scale, or the 3 planes of all the smaller scales.
+int64_t scoreRowsSize(int64_t width, int64_t height, int scales){
+    int64_t smallerScales = 0;
+    int64_t w = width;
+    int64_t h = height;
+    for (int scale = 1; scale < scales; scale++){
+        w = (w-1)/2+1;
+        h = (h-1)/2+1;
+        smallerScales += 3*5*w*h;
+    }
+    return std::max(5*width*height, smallerScales);
 }
 
-//Blurs the 5 signals of one plane at one scale and writes its sums of the error maps to sums.
-void placePlaneScore(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress sums, VkDeviceAddress im1, VkDeviceAddress im2, VkDeviceAddress rows, int64_t width, int64_t height, GaussianHandle& gaussianhandle){
+//Working memory of the score kernels.
+int64_t tempAllocsizeScore(int64_t width, int64_t height){
+    return scoreRowsSize(width, height, scoredScales(width, height));
+}
+
+//Blurs the 5 signals of planes firstPlane .. firstPlane+planes-1 at scales firstScale .. firstScale+scales-1 and writes
+//their sums of the error maps to sums (Job in shaders/scoreSSIMU2.slang). im1 and im2 are the first planes, planeStride
+//floats apart.
+void placeScoreJobs(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress sums, VkDeviceAddress im1, VkDeviceAddress im2, int64_t planeStride, VkDeviceAddress rows, int64_t rowsSize, int64_t baseWidth, int64_t baseHeight, int firstScale, int scales, int firstPlane, int planes, GaussianHandle& gaussianhandle){
     const uint32_t zero = 0;
     uint8_t kernelArguments[128];
+    int64_t width = baseWidth;
+    int64_t height = baseHeight;
+    for (int scale = 0; scale < firstScale; scale++){
+        width = (width-1)/2+1;
+        height = (height-1)/2+1;
+    }
 
-    fillKernelArguments(0, kernelArguments, im1, im2, rows, gaussianhandle.coefficients_d, width, height, zero);
-    deviceHelper->device.placeKernel(cmdBuff, deviceHelper->cachedPipeline["scoreSSIMU2.spv:blurRows"], kernelArguments, (height-1)/scoreThreads+1, 1, 1);
+    fillKernelArguments(0, kernelArguments, im1, im2, rows, gaussianhandle.coefficients_d, planeStride, baseWidth, baseHeight, firstScale, firstPlane, planes, zero);
+    deviceHelper->device.placeKernel(cmdBuff, deviceHelper->cachedPipeline["scoreSSIMU2.spv:blurRows"], kernelArguments, (height-1)/scoreRowGroup+1, planes, scales);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {rows, sizeof(float)*5*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
+        {rows, sizeof(float)*rowsSize, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
     });
 
-    fillKernelArguments(0, kernelArguments, im1, im2, rows, gaussianhandle.coefficients_d, sums, width, height, zero);
-    deviceHelper->device.placeKernel(cmdBuff, deviceHelper->cachedPipeline["scoreSSIMU2.spv:blurColumnsAndScore"], kernelArguments, (width-1)/scoreThreads+1, 1, 1);
+    fillKernelArguments(0, kernelArguments, im1, im2, rows, gaussianhandle.coefficients_d, sums, planeStride, baseWidth, baseHeight, firstScale, firstPlane, planes, zero);
+    deviceHelper->device.placeKernel(cmdBuff, deviceHelper->cachedPipeline["scoreSSIMU2.spv:blurColumnsAndScore"], kernelArguments, (width-1)/scoreThreads+1, planes, scales);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {rows, sizeof(float)*5*width*height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {sums, sizeof(float)*sumsPerWorkgroup*((width-1)/scoreThreads+1), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
+        {rows, sizeof(float)*rowsSize, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });
 }
 
 //Scores every plane of every scored scale; sums_d gets their sums (sumsSize floats), copied to sums on the CPU.
+//The planes of im1 and im2 must be equally spaced.
 void placeAllscore_map(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* sums, VkDeviceAddress sums_d, VkDeviceAddress im1[3], VkDeviceAddress im2[3], VkDeviceAddress temp, int64_t basewidth, int64_t baseheight, GaussianHandle& gaussianhandle){
     const int scales = scoredScales(basewidth, baseheight);
-    int64_t w = basewidth;
-    int64_t h = baseheight;
-    int64_t index = 0;
-    int64_t sumsOffset = 0;
-    for (int scale = 0; scale < scales; scale++){
-        for (int plane = 0; plane < 3; plane++){
-            placePlaneScore(deviceHelper, cmdBuff, sums_d+sizeof(float)*sumsOffset, im1[plane]+sizeof(float)*index, im2[plane]+sizeof(float)*index, temp, w, h, gaussianhandle);
-            sumsOffset += sumsPerWorkgroup*((w-1)/scoreThreads+1);
-        }
-        index += w*h;
-        w = (w+1)/2;
-        h = (h+1)/2;
+    const int64_t planeStride = (int64_t)(im1[1]-im1[0])/sizeof(float);
+    const int64_t rowsSize = scoreRowsSize(basewidth, baseheight, scales);
+    for (int plane = 0; plane < 3; plane++){
+        placeScoreJobs(deviceHelper, cmdBuff, sums_d, im1[0], im2[0], planeStride, temp, rowsSize, basewidth, baseheight, 0, 1, plane, 1, gaussianhandle);
     }
+    if (scales > 1){
+        placeScoreJobs(deviceHelper, cmdBuff, sums_d, im1[0], im2[0], planeStride, temp, rowsSize, basewidth, baseheight, 1, scales-1, 0, 3, gaussianhandle);
+    }
+    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
+        {sums_d, sizeof(float)*sumsSize(basewidth, baseheight), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
+    });
 
     deviceHelper->device.memCpyDtoH(cmdBuff, sums, sums_d, sizeof(float)*sumsSize(basewidth, baseheight));
 }
-
 //libjxl's Msssim::Score from the sums written by placeAllscore_map, in double like libjxl.
 double final_score(const float* sums, int64_t width, int64_t height){
     //measures[plane*36 + scale*6 + norm*3 + map], map 0: ssim, 1: artifact, 2: detail lost
