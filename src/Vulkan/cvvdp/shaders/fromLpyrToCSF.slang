@@ -62,13 +62,23 @@ void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_
     static groupshared float2 bufferInput[23*23];
     static groupshared float2 bufferSmallScale[10*10];
 
-    //load input in memory
-
-    for (int i = thid; i < 23*23; i+=256){
-        const int64_t x = base_x-4 + (i%23);
-        const int64_t y = base_y-4 + (i/23);
-        bufferInput[i].x = reducePadded(inputPlane1, x, y, width, height);
-        bufferInput[i].y = reducePadded(inputPlane2, x, y, width, height);
+    //load input in memory: a thread's loads (3 pixels at most) are all issued before its first store, so that their
+    //waits overlap
+    float2 loaded[3];
+    [ForceUnroll]
+    for (int m = 0; m < 3; m++){
+        const int i = thid + 256*m;
+        if (i < 23*23){
+            const int64_t x = base_x-4 + (i%23);
+            const int64_t y = base_y-4 + (i/23);
+            loaded[m].x = reducePadded(inputPlane1, x, y, width, height);
+            loaded[m].y = reducePadded(inputPlane2, x, y, width, height);
+        }
+    }
+    [ForceUnroll]
+    for (int m = 0; m < 3; m++){
+        const int i = thid + 256*m;
+        if (i < 23*23) bufferInput[i] = loaded[m];
     }
     GroupMemoryBarrierWithGroupSync();
 
