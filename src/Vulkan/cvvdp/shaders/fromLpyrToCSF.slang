@@ -9,11 +9,11 @@ static const float gaussPyrKernel[5] = {0.25-kernel_a/2.,0.25, kernel_a, 0.25, 0
 // - odd width: only the second column past the edge gets the last column, the first one is 0;
 // - even width: the last output also adds the last column once more with the weight of the tap next to the
 //   center, which the first column past the edge (weight K4) carries as K3/K4 times the last column.
-float reducePadded(float* plane, int64_t x, int64_t y, int64_t width, int64_t height){
+float reducePadded(float* plane, int x, int y, int width, int height){
     if (y < 0) y = -y - 1;
     if (y >= height) y = 2*height - 1 - y;
-    y = clamp(y, (int64_t)0, height - 1); //only for planes under 3 pixels
-    float* row = plane + y*width;
+    y = clamp(y, 0, height - 1); //only for planes under 3 pixels
+    float* row = plane + (int64_t)y*width;
     if (x < 0) x = -x - 1;
     if (x >= width){
         const bool oddWidth = (width%2) == 1;
@@ -24,11 +24,11 @@ float reducePadded(float* plane, int64_t x, int64_t y, int64_t width, int64_t he
             if (x == width) return 0.f;
             x = width - 1;
         } else {
-            if (x == width) return row[max(width - 2, (int64_t)0)] + (gaussPyrKernel[3]/gaussPyrKernel[4])*row[width - 1];
+            if (x == width) return row[max(width - 2, 0)] + (gaussPyrKernel[3]/gaussPyrKernel[4])*row[width - 1];
             x = width - 1;
         }
     }
-    return row[clamp(x, (int64_t)0, width - 1)];
+    return row[clamp(x, 0, width - 1)];
 }
 
 //pyramidSize is the stride of a "big" plane as a whole. mem_d needs to be offset prior using scaleOffset
@@ -71,8 +71,8 @@ void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_
         if (i < 23*23){
             const int64_t x = base_x-4 + (i%23);
             const int64_t y = base_y-4 + (i/23);
-            loaded[m].x = reducePadded(inputPlane1, x, y, width, height);
-            loaded[m].y = reducePadded(inputPlane2, x, y, width, height);
+            loaded[m].x = reducePadded(inputPlane1, (int)x, (int)y, (int)width, (int)height);
+            loaded[m].y = reducePadded(inputPlane2, (int)x, (int)y, (int)width, (int)height);
         }
     }
     [ForceUnroll]
