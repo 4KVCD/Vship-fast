@@ -49,10 +49,9 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
     VkDeviceAddress block_diff_dc[3] = {src1_d[0], src1_d[1], src1_d[2]};
     VkDeviceAddress block_diff_ac[3] = {src2_d[0], src2_d[1], src2_d[2]};
 
-    //set the accumulators to 0
+    //set the accumulators of the Malta differences to 0 (placeL2diffs sets block_diff_dc itself)
     for (int c = 0; c < 3; c++){
         placeMemset(deviceHelper, cmdBuff, block_diff_ac[c], width*height, 0);
-        placeMemset(deviceHelper, cmdBuff, block_diff_dc[c], width*height, 0);
     }
 
     const float hf_asymmetry_ = 0.8f;
@@ -87,13 +86,13 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
       29.2353797994f, 0.844626970982f, 0.703646627719f,
     };
 
-    for (int c = 0; c < 3; c++){
-        if (c < 2){
-            placeL2AsymDiff(deviceHelper, cmdBuff, hf1[c], hf2[c], block_diff_ac[c], width*height, wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_);
-        }
-        placeL2diff(deviceHelper, cmdBuff, mf1[c], mf2[c], block_diff_ac[c], width*height, wmul[3 + c]);
-        placeL2diff(deviceHelper, cmdBuff, lf1[c], lf2[c], block_diff_dc[c], width*height, wmul[6 + c]);
+    for (int c = 0; c < 2; c++){
+        placeL2AsymDiff(deviceHelper, cmdBuff, hf1[c], hf2[c], block_diff_ac[c], width*height, wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_);
     }
+    //then L2diff of the medium frequencies into block_diff_ac and of the low ones (converted by XybLowFreqToVals) into
+    //block_diff_dc, in one pass. It finds the planes at their places in mem_d, and the 3 planes of each block_diff one
+    //after the other, as they are allocated.
+    placeL2diffs(deviceHelper, cmdBuff, mem_d, block_diff_ac[0], block_diff_dc[0], width*height, wmul+3, wmul+6);
 
     //from now on, lf and mf are not used so we will reuse the memory
     VkDeviceAddress mask = temp[1];

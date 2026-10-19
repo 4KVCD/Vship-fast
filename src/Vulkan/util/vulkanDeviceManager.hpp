@@ -62,7 +62,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"downupsampleButter.spv", {"downsample", "addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
     {"colorsButter.spv", {"opsinDynamicsImage"}},
-    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff"}},
+    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff", "L2diffs"}},
     {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit"}},
     {"combineMasksButter.spv", {"computeDiffmap"}},
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
@@ -71,8 +71,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
         "removerangearound0", 
         "subarray_amplifyrangearound0", 
         "supressXbyY", 
-        "separateHf_Uhf", 
-        "XybLowFreqToVals"
+        "separateHf_Uhf"
         }
     },
     //CVVDP

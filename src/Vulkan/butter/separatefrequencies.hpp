@@ -67,21 +67,6 @@ void placeSeparateHf_Uhf(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuf
     });
 }
 
-void placeXybLowFreqToVals(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress xplane, VkDeviceAddress yplane, VkDeviceAddress bplane, uint64_t width){
-    uint64_t th_x = 256;
-    uint64_t bl_x = (width-1)/th_x + 1;
-
-    VkPipeline pipeline = deviceHelper->cachedPipeline["separateFrequenciesButter.spv:XybLowFreqToVals"];
-    uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, xplane, yplane, bplane, width);
-    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, 1, 1);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {xplane, sizeof(float)*width, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {yplane, sizeof(float)*width, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {bplane, sizeof(float)*width, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-    });
-}
-
 void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src[3], VkDeviceAddress temp[3], VkDeviceAddress lf[3], VkDeviceAddress mf[3], VkDeviceAddress hf[2], VkDeviceAddress uhf[2], uint64_t width, uint64_t height, GaussianHandle& gaussianHandle){
     for (int i = 0; i < 3; i++){
         //we separate lf to get mf BUT we put mf on hf if i != 2 for later reasons
@@ -123,7 +108,7 @@ void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer c
         }
     }
 
-    placeXybLowFreqToVals(deviceHelper, cmdBuff, lf[0], lf[1], lf[2], width*height);        
+    //lf is converted by XybLowFreqToVals in placeL2diffs, its only reader
 }
 
 }

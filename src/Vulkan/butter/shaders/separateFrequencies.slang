@@ -1,14 +1,4 @@
-float3 XybLowFreqToVals_Device(float3 xyb) {
-    const float xmuli = 33.832837186260f;
-    const float ymuli = 14.458268100570f;
-    const float bmuli = 49.87984651440f;
-    const float y_to_b_muli = -0.362267051518f;
-    xyb.z = xyb.z + y_to_b_muli * xyb.y;
-    xyb.z = xyb.z * bmuli;
-    xyb.x = xyb.x * xmuli;
-    xyb.y = xyb.y * ymuli;
-    return xyb;
-}
+import xybLowFreqModule;
 
 float SuppressHfInBrightAreas_Device(float hf, float brightness, float mul, float reg) {
     float scaler = mul * reg / (reg + brightness);
@@ -114,16 +104,3 @@ void separateHf_Uhf(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Grou
     //printf("res : %f and %f\n", first[x], second[x]);
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void XybLowFreqToVals(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* xplane, uniform float* yplane, uniform float* bplane, uniform uint64_t width){
-    uint64_t x = threadIdx.x + blockIdx.x*256;
-
-    if (x >= width) return;
-
-    
-    float3 src = XybLowFreqToVals_Device({xplane[x], yplane[x], bplane[x]});
-    xplane[x] = src.x;
-    yplane[x] = src.y;
-    bplane[x] = src.z;
-}
