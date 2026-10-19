@@ -33,19 +33,35 @@ float channelWeight(int channel, bool baseband){
     return baseband ? weight*baseband_weight[channel] : weight;
 }
 
+//Byte offsets of each band in a pyramid plane
+std::vector<int64_t> pyramidBandOffsets(int64_t width, int64_t height, int levels){
+    std::vector<int64_t> bandOffsets(levels);
+    bandOffsets[0] = 0;
+    for (int i = 1; i < levels; i++){
+        bandOffsets[i] = bandOffsets[i-1]+width*height*sizeof(float);
+        width = (width+1)/2;
+        height = (height+1)/2;
+    }
+    return bandOffsets;
+}
+
+//The distortion map of the frame placeCVVDPFinalStage scored, into the plane it returns
+void placeCVVDPDistmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, int64_t resize_width, int64_t resize_height, DisplayModel* model){
+    const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
+    const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
+    VkDeviceAddress res[4];
+    for (int channel = 0; channel < 4; channel++) res[channel] = mem_d+sizeof(float)*channel*pyramidSize;
+    placeGetDistMap(deviceHelper, cmdBuff, res, pyramidBandOffsets(resize_width, resize_height, levels), resize_width, resize_height, levels);
+    //result is in res[0], we can now discard other planes
+}
+
 VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model){
     const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
 
     const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
-    int64_t w = resize_width;
-    int64_t h = resize_height;
-    std::vector<int64_t> bandOffsets(levels);
-    bandOffsets[0] = 0;
-    for (int i = 1; i < levels; i++){
-        bandOffsets[i] = bandOffsets[i-1]+w*h*sizeof(float);
-        w = (w+1)/2;
-        h = (h+1)/2;
-    }
+    int64_t w;
+    int64_t h;
+    const std::vector<int64_t> bandOffsets = pyramidBandOffsets(resize_width, resize_height, levels);
 
     std::vector<std::vector<VkDeviceAddress>> memPlace1;
     std::vector<std::vector<VkDeviceAddress>> memPlace2;
@@ -121,10 +137,7 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {{temp, sizeof(float)*levels*4, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}});
 
     if (outputDistmap){
-        //we want a distmap
-        VkDeviceAddress res[4] = {memPlace1[0][0], memPlace1[1][0], memPlace1[2][0], memPlace1[3][0]};
-        placeGetDistMap(deviceHelper, cmdBuff, res, bandOffsets, resize_width, resize_height, levels);
-        //result is in res[0], we can now discard other planes
+        placeCVVDPDistmap(deviceHelper, cmdBuff, mem_d, resize_width, resize_height, model);
     }
 
     return memPlace1[0][0];
@@ -265,8 +278,9 @@ public:
         //while it's running, (even though it should take less time on gpu than queuesubmit oof) we do other stuff
         //record buffer2 (the heart of ssimu2)
         beginCmdBuffer(cmdBuffs[2]);
-        //preprocess phase goes up to having temporally filtered planes filled up
-        distmapAddress = placeCVVDPFinalStage(deviceHelper, cmdBuffs[2], outputScoresCPU, true, mem_d, source_width, source_height, resize_width, resize_height, csf_handler, gaussianhandle, model);
+        //preprocess phase goes up to having temporally filtered planes filled up; the distortion map is only
+        //computed for the frames that ask for it (run)
+        distmapAddress = placeCVVDPFinalStage(deviceHelper, cmdBuffs[2], outputScoresCPU, false, mem_d, source_width, source_height, resize_width, resize_height, csf_handler, gaussianhandle, model);
         endCmdBuffer(cmdBuffs[2]);
 
         fence->synchronize();
@@ -404,6 +418,7 @@ public:
             intermediate = isHostAllocated ? (float*)dstp : lazyPinnedRealloc(dststride * resize_height*sizeof(float));
             resetCmdBuffer(cmdBuffs[3]);
             beginCmdBuffer(cmdBuffs[3]);
+            placeCVVDPDistmap(deviceHelper, cmdBuffs[3], mem_d, resize_width, resize_height, model);
             placeStrideAdder(deviceHelper, cmdBuffs[3], distmapAddress, mem_d + sizeof(float)*1*pyramidSize, dststride, resize_width, resize_height);
             deviceHelper->device.memCpyDtoH(cmdBuffs[3], intermediate, mem_d + sizeof(float)*1*pyramidSize, dststride * resize_height);
             endCmdBuffer(cmdBuffs[3]);
