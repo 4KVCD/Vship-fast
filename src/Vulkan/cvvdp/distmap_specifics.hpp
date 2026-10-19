@@ -49,13 +49,18 @@ void placeGetDistMap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, V
         w = (w+1)/2;
         h = (h+1)/2;
     }
-    //reconstruction
+    //reconstruction, from the coarsest band up: each band gets the expansion of the one below it, at its own size
+    std::vector<int64_t> bandWidths(levels), bandHeights(levels);
     w = width;
     h = height;
-    for (int band = levels-2; band >= 0; band--){
-        placeGaussPyrExpand<false, true, false>(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[0]+bandOffsets[band+1], w, h);
+    for (int band = 0; band < levels; band++){
+        bandWidths[band] = w;
+        bandHeights[band] = h;
         w = (w+1)/2;
         h = (h+1)/2;
+    }
+    for (int band = levels-2; band >= 0; band--){
+        placeGaussPyrExpand<false, true, false>(deviceHelper, cmdBuff, res[0]+bandOffsets[band], res[0]+bandOffsets[band+1], bandWidths[band], bandHeights[band]);
     }
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["distmap_specificsCVVDP.spv:JODIZE"];
