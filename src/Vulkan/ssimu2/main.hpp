@@ -127,8 +127,9 @@ public:
         semaphore = deviceHelper->device.createSemaphores();
 
         //here we define the final destination of our color converted frames
-        converter1.init(source_colorspace, VshipColorConvert::linRGBBT709, deviceHelper, src1_d);
-        converter2.init(source_colorspace2, VshipColorConvert::linRGBBT709, deviceHelper, src2_d);
+        //libjxl's input arithmetic: libjxl is the reference of this metric
+        converter1.init(source_colorspace, VshipColorConvert::linRGBBT709, deviceHelper, src1_d, true);
+        converter2.init(source_colorspace2, VshipColorConvert::linRGBBT709, deviceHelper, src2_d, true);
 
         size_t tempSizeConverter1 = VshipColorConvert::getTempMemoryNeeded(source_colorspace);
         size_t tempSizeConverter2 = VshipColorConvert::getTempMemoryNeeded(source_colorspace2);

@@ -10,10 +10,38 @@ float gamma_to_linrgbfunc(float a, float gamma){
     }
 }
 
+// a/b correctly rounded, like the CPU's division; Vulkan allows the GPU's own division to be 2.5 ulp off.
+float divideRoundedToNearest(float a, float b){
+    const float r = 1.0f/b;
+    const float q = a*r;
+    return fma(fma(-q, b, a), r, q);
+}
+
+// libjxl's TF_SRGB::DisplayFromEncoded (lib/jxl/cms/transfer_functions-inl.h), the sRGB curve as libjxl applies
+// it when it converts sRGB input to linear: a rational approximation of the curve, up to 5e-6 away from it.
+float srgbToLinearLibjxl(float x){
+    const float magnitudeIn = abs(x);
+    float yp = 8.210152774e-01f;
+    float yq = 6.521209011e-03f;
+    yp = fma(yp, magnitudeIn, 7.961564959e-01f);
+    yq = fma(yq, magnitudeIn, -5.512498495e-02f);
+    yp = fma(yp, magnitudeIn, 1.624820318e-01f);
+    yq = fma(yq, magnitudeIn, 4.987528350e-01f);
+    yp = fma(yp, magnitudeIn, 1.043637593e-02f);
+    yq = fma(yq, magnitudeIn, 1.076976492e+00f);
+    yp = fma(yp, magnitudeIn, 2.200248328e-04f);
+    yq = fma(yq, magnitudeIn, 2.631846970e-01f);
+    const float lowDivInv = 0.0773993805f; //1.0f/12.92f
+    const float magnitude = (magnitudeIn > 0.04045f) ? divideRoundedToNearest(yp, yq) : magnitudeIn*lowDivInv;
+    return (x < 0) ? -magnitude : magnitude;
+}
+
 //default here will take linear and hlg since they are treated before
-float inverseTransferMono(float a, Vship_TransferFunction_t transfer){
+//libjxlArithmetic: the sRGB curve as libjxl computes it (srgbToLinearLibjxl)
+float inverseTransferMono(float a, Vship_TransferFunction_t transfer, bool libjxlArithmetic){
     switch (transfer){
         case Vship_TransferFunction_t.Vship_TRC_sRGB:{
+            if (libjxlArithmetic) return srgbToLinearLibjxl(a);
             if (a < 0){
                 if (a < -0.04045f){
                     a = -pow(((-a+0.055)*(1.0/1.055)), 2.4f);
@@ -77,7 +105,7 @@ float inverseTransferMono(float a, Vship_TransferFunction_t transfer){
     }
 }
 
-public float3 inverseTransfer(float3 val, Vship_TransferFunction_t transfer){
+public float3 inverseTransfer(float3 val, Vship_TransferFunction_t transfer, bool libjxlArithmetic){
     switch(transfer){
         case Vship_TransferFunction_t.Vship_TRC_Linear:{
             return val;
@@ -112,9 +140,9 @@ public float3 inverseTransfer(float3 val, Vship_TransferFunction_t transfer){
             return val;
         }
         default:{
-            val.x = inverseTransferMono(val.x, transfer);
-            val.y = inverseTransferMono(val.y, transfer);
-            val.z = inverseTransferMono(val.z, transfer);
+            val.x = inverseTransferMono(val.x, transfer, libjxlArithmetic);
+            val.y = inverseTransferMono(val.y, transfer, libjxlArithmetic);
+            val.z = inverseTransferMono(val.z, transfer, libjxlArithmetic);
             return val;
         }
     }

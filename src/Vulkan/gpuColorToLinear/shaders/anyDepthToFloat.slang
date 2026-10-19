@@ -1,11 +1,13 @@
 import vshipColorModule;
 
-float fullRange(Vship_Sample_t sampleType, Vship_Range_t range, bool ColorFamchromaPlane, float a){
+//fullRangeScale: when not 0, full range samples are multiplied by it instead of divided by their maximum
+float fullRange(Vship_Sample_t sampleType, Vship_Range_t range, bool ColorFamchromaPlane, float a, float fullRangeScale){
     uint32_t bitdepth = bitprecisionSample(sampleType);
     if (range == Vship_Range_t.Vship_RangeFull){
         float normalization = (1 << bitdepth) - 1; //float and half get 1
         //put in range [0, 1]
-        a /= normalization;
+        if (fullRangeScale != 0.f) a *= fullRangeScale;
+        else a /= normalization;
         if (ColorFamchromaPlane){
             a -= 0.5;
         }
@@ -82,11 +84,11 @@ float pickValue(uint8_t* source_plane, uint64_t x, uint64_t stride, uint64_t wid
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void convertToFloatPlane(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* output_plane, uniform uint8_t* source_plane, uniform uint64_t stride, uniform uint64_t width, uniform uint64_t height, uniform Vship_Sample_t sampleType, uniform Vship_Range_t range, uniform int ColorFamchromaPlane, uniform int misalignementHandling){
+void convertToFloatPlane(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* output_plane, uniform uint8_t* source_plane, uniform uint64_t stride, uniform uint64_t width, uniform uint64_t height, uniform Vship_Sample_t sampleType, uniform Vship_Range_t range, uniform int ColorFamchromaPlane, uniform int misalignementHandling, uniform float fullRangeScale){
     uint64_t x = threadIdx.x + 256*blockIdx.x;
     if (x >= width*height) return;
 
     float val = pickValue(source_plane, x, stride, width, sampleType, (bool)misalignementHandling);
-    val = fullRange(sampleType, range, (bool)ColorFamchromaPlane, val);
+    val = fullRange(sampleType, range, (bool)ColorFamchromaPlane, val, fullRangeScale);
     output_plane[x] = val;
 }

@@ -42,6 +42,7 @@ class Converter{
     VshipDeviceHelper* deviceHelper;
     Vship_Colorspace_t source_colorspace;
     ConverterDestination_t destination;
+    bool libjxlArithmetic = false;
     uint64_t width;
     uint64_t height;
 
@@ -75,7 +76,10 @@ class Converter{
 public:
     Converter() = default;
     //width and height are of the input (before crop)
-    void init(Vship_Colorspace_t colorspace, ConverterDestination_t destination, VshipDeviceHelper* deviceHelper, VkDeviceAddress outPlanes[3]){
+    //libjxlArithmetic: convert integer samples to float and undo the sRGB curve with libjxl's arithmetic, for the
+    //metrics whose reference is libjxl (SSIMULACRA2 and Butteraugli are sensitive to an ulp of difference there)
+    void init(Vship_Colorspace_t colorspace, ConverterDestination_t destination, VshipDeviceHelper* deviceHelper, VkDeviceAddress outPlanes[3], bool libjxlArithmetic = false){
+        this->libjxlArithmetic = libjxlArithmetic;
         for (uint i = 0; i < 3; i++){
             this->outPlanes[i] = outPlanes[i];
         }
@@ -177,7 +181,7 @@ public:
             const size_t bytesToCopy = lineSize[i]*plane_heights[i] - (lineSize[i] - byteSize*plane_widths[i]);
             deviceHelper->device.memCpyHtoD(cmdbuff, src_d, src[i], bytesToCopy);
             deviceHelper->device.placeMemoryBarriers(cmdbuff, {{src_d, bytesToCopy, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
-            placeConvertToFloatPlane(deviceHelper, cmdbuff, intermediatePlanes[i], src_d, lineSize[i], plane_widths[i], plane_heights[i], source_colorspace.sample, source_colorspace.range, source_colorspace.colorFamily, (bool)(i != 0));
+            placeConvertToFloatPlane(deviceHelper, cmdbuff, intermediatePlanes[i], src_d, lineSize[i], plane_widths[i], plane_heights[i], source_colorspace.sample, source_colorspace.range, source_colorspace.colorFamily, (bool)(i != 0), libjxlArithmetic);
             deviceHelper->device.placeMemoryBarriers(cmdbuff, {
                 {src_d, bytesToCopy, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
                 {intermediatePlanes[i], sizeof(float)*plane_widths[i]*plane_heights[i], VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
@@ -191,7 +195,7 @@ public:
         uint64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
         uint64_t maxHeight= std::max(source_colorspace.target_height, source_colorspace.height);
         if (placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
-        placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction);
+        placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction, libjxlArithmetic);
         //then we manage primaries, it depends on the destination
         switch(destination){
             case linRGB:
