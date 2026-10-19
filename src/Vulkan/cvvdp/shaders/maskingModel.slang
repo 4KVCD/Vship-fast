@@ -50,7 +50,7 @@ void preGaussianPreCompute(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : 
     //if (thid == 0) printf("preGaussian ends with %f %f using sensi %f\n", p1[thid], p2[thid], S);
 }
 
-static groupshared float tampon[32*32];
+static groupshared float tampon[4][32*32]; //one tile per channel
 static const int PU_RADIUS = 6; //puRadius in gaussianBlur.hpp
 static const int PU_PADSIZE = 6; //pycvvdp blurs only bands larger than this in both directions
 
@@ -70,44 +70,55 @@ int64_t reflect(int64_t x, int64_t size){
     return x;
 }
 
-// Loads min(|src1|, |src2|) for this 16x16 block and a halo of 8 pixels into tampon, reflected at the borders.
-void GaussianSmartSharedLoadMinAbs(const int thx, const int thy, float* src1, float* src2, int64_t x, int64_t y, int64_t width, int64_t height){
+// Loads min(|src1|, |src2|) of channel c for this 16x16 block and a halo of 8 pixels into tampon[c], reflected at
+// the borders.
+void GaussianSmartSharedLoadMinAbs(const int c, const int thx, const int thy, float* src1, float* src2, int64_t x, int64_t y, int64_t width, int64_t height){
     const int64_t tampon_base_x = x - thx - 8;
     const int64_t tampon_base_y = y - thy - 8;
     for (int dy = 0; dy < 32; dy += 16){
         for (int dx = 0; dx < 32; dx += 16){
             const int64_t pixel = reflect(tampon_base_y + thy + dy, height)*width + reflect(tampon_base_x + thx + dx, width);
-            tampon[(thy+dy)*32 + thx+dx] = min(abs(src1[pixel]), abs(src2[pixel]));
+            tampon[c][(thy+dy)*32 + thx+dx] = min(abs(src1[pixel]), abs(src2[pixel]));
+        }
+    }
+}
+
+// pycvvdp's phase uncertainty blur of the values loaded for this thread's pixel in the 4 channels: the 13-tap
+// kernel horizontally then vertically. Bands of 6 pixels or less in either direction are not blurred, like pycvvdp.
+float4 GaussianSmart_Device(const int thx, const int thy, int64_t width, int64_t height, float* gaussiankernel){
+    float4 result;
+    if (width <= PU_PADSIZE || height <= PU_PADSIZE){
+        [ForceUnroll]
+        for (int c = 0; c < 4; c++) result[c] = tampon[c][(thy+8)*32 + thx+8];
+        return result;
+    }
+    float out[4], out2[4];
+    [ForceUnroll]
+    for (int c = 0; c < 4; c++){
+        out[c] = 0.f;
+        out2[c] = 0.f;
+        for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
+            out[c] += tampon[c][thy*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
+            out2[c] += tampon[c][(thy+16)*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
         }
     }
     GroupMemoryBarrierWithGroupSync();
-}
-
-// pycvvdp's phase uncertainty blur of the value loaded for this thread's pixel: the 13-tap kernel horizontally
-// then vertically. Bands of 6 pixels or less in either direction are not blurred, like pycvvdp.
-float GaussianSmart_Device(const int thx, const int thy, int64_t width, int64_t height, float* gaussiankernel){
-    if (width <= PU_PADSIZE || height <= PU_PADSIZE){
-        const float center = tampon[(thy+8)*32 + thx+8];
-        GroupMemoryBarrierWithGroupSync(); //tampon is loaded again for the next channel
-        return center;
+    [ForceUnroll]
+    for (int c = 0; c < 4; c++){
+        tampon[c][thy*32 + thx+8] = out[c];
+        tampon[c][(thy+16)*32 + thx+8] = out2[c];
     }
-    float out = 0.f;
-    float out2 = 0.f;
-    for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
-        out += tampon[thy*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
-        out2 += tampon[(thy+16)*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
-    }
-    GroupMemoryBarrierWithGroupSync();
-    tampon[thy*32 + thx+8] = out;
-    tampon[(thy+16)*32 + thx+8] = out2;
     GroupMemoryBarrierWithGroupSync();
 
-    out = 0.f;
-    for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
-        out += tampon[(thy+8+i)*32 + thx+8]*gaussiankernel[i+PU_RADIUS];
+    [ForceUnroll]
+    for (int c = 0; c < 4; c++){
+        float sum = 0.f;
+        for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
+            sum += tampon[c][(thy+8+i)*32 + thx+8]*gaussiankernel[i+PU_RADIUS];
+        }
+        result[c] = sum;
     }
-    GroupMemoryBarrierWithGroupSync();
-    return out;
+    return result;
 }
 
 //works for a band  but does all channels. It writes result on source ref
@@ -121,21 +132,17 @@ void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
 
     const float powmaskc = pow(10, mask_c);
 
-    GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R0, T0, x, y, width, height);
-    const float blurred0 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
-    const float blurred_Cm0 = safe_pow(powmaskc*abs(blurred0), mask_q[0]);
-
-    GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R1, T1, x, y, width, height);
-    const float blurred1 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
-    const float blurred_Cm1 = safe_pow(powmaskc*abs(blurred1), mask_q[1]);
-
-    GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R2, T2, x, y, width, height);
-    const float blurred2 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
-    const float blurred_Cm2 = safe_pow(powmaskc*abs(blurred2), mask_q[2]);
-
-    GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R3, T3, x, y, width, height);
-    const float blurred3 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
-    const float blurred_Cm3 = safe_pow(powmaskc*abs(blurred3), mask_q[3]);
+    //the 4 channels are loaded and blurred together, so that their reads overlap and they share the barriers
+    GaussianSmartSharedLoadMinAbs(0, threadIdx.x, threadIdx.y, R0, T0, x, y, width, height);
+    GaussianSmartSharedLoadMinAbs(1, threadIdx.x, threadIdx.y, R1, T1, x, y, width, height);
+    GaussianSmartSharedLoadMinAbs(2, threadIdx.x, threadIdx.y, R2, T2, x, y, width, height);
+    GaussianSmartSharedLoadMinAbs(3, threadIdx.x, threadIdx.y, R3, T3, x, y, width, height);
+    GroupMemoryBarrierWithGroupSync();
+    const float4 blurred = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
+    const float blurred_Cm0 = safe_pow(powmaskc*abs(blurred[0]), mask_q[0]);
+    const float blurred_Cm1 = safe_pow(powmaskc*abs(blurred[1]), mask_q[1]);
+    const float blurred_Cm2 = safe_pow(powmaskc*abs(blurred[2]), mask_q[2]);
+    const float blurred_Cm3 = safe_pow(powmaskc*abs(blurred[3]), mask_q[3]);
 
     const float Cmask0 = fma(blurred_Cm0, pow(2.f, xcm_weights[0]), fma(blurred_Cm1, pow(2.f, xcm_weights[4]), fma(blurred_Cm2, pow(2.f, xcm_weights[8]), blurred_Cm3*pow(2.f, xcm_weights[12]))));
     const float Cmask1 = fma(blurred_Cm0, pow(2.f, xcm_weights[1]), fma(blurred_Cm1, pow(2.f, xcm_weights[5]), fma(blurred_Cm2, pow(2.f, xcm_weights[9]), blurred_Cm3*pow(2.f, xcm_weights[13]))));
