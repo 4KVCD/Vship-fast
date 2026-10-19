@@ -10,16 +10,8 @@ void temporalConvolutionKernel_d(uint3 threadIdx : SV_GroupThreadID, uint3 block
     const int64_t planeSize = width*height;
     if (x >= planeSize) return;
 
-    if (temporal_size == 1){
-        float* srcptr = getFramePointer(0, temporalBuffer, width, height, temporal_offset, temporal_size, max_temporal_size);
-        Y_sustained[x] = srcptr[x];
-        RG_sustained[x] = srcptr[x+planeSize];
-        YV_sustained[x] = srcptr[x+2*planeSize];
-        Y_transient[x] = 0.f;
-        //if (x == 13*1024 + 64) printf("after temporalFilter: %f %f %f %f\n", Y_sustained[x], RG_sustained[x], YV_sustained[x], Y_transient[x]);
-        return;
-    }
-
+    //with fewer frames than the filter, the oldest frame stands for the missing ones (getFramePointer), like
+    //pycvvdp's replicate padding; on the first frame the filters' sums give the sustained and transient channels
     //we use float2 to use double issue float ALU computing units.
     float2 valueTemp;
 
