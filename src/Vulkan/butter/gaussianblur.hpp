@@ -88,47 +88,31 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
     VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
     VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
 
-    uint64_t wh = width*height;
-
-    if (gaussiansize == 8){ //special gaussian blur! It doesnt even use temp
-        int64_t th_x = 16;
-        int64_t th_y = 16;
-        int64_t bl_x = (width-1)/(2*th_x)+1;
-        int64_t bl_y = (height-1)/(2*th_y)+1;
-        
-        VkPipeline tiledBlurPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:TiledGaussianBlur"];
-        uint8_t kernelArguments[128];
+    VkPipeline pipeline;
+    uint8_t kernelArguments[128];
+    uint64_t bl_x, bl_y;
+    if (gaussiansize == 8){
+        //TiledGaussianBlur, 32x32 outputs per workgroup. The fused separableBlur kernel cannot replace it: its
+        //compiled code mixes fused and separate multiply-adds, and each compiler mixes them its own way.
+        pipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:TiledGaussianBlur"];
         fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral);
-        deviceHelper->device.placeKernel(cmdBuff, tiledBlurPipeline, kernelArguments, bl_x*bl_y, 1, 1);
-        deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-            {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-            {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-        });
+        bl_x = ((width-1)/32+1)*((height-1)/32+1);
+        bl_y = 1;
     } else {
-        uint64_t th_x = 256;
-        uint64_t bl_x = (wh-1)/th_x + 1;
-
-        uint64_t verticalth_x = 32;
-        uint64_t verticalth_y = 8;
-        uint64_t verticalbl_x = (width-1)/verticalth_x+1;
-        uint64_t verticalbl_y = (height-1)/verticalth_y+1;
-
-        VkPipeline horizontalPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:horizontalBlur"];
-        VkPipeline verticalPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:verticalBlur"];
-        uint8_t kernelArguments[128];
-        fillKernelArguments(0, kernelArguments, temp, mem_d, width, height, gaussianKernel, gaussianKernel_integral, gaussiansize);
-        deviceHelper->device.placeKernel(cmdBuff, horizontalPipeline, kernelArguments, bl_x, 1, 1);
-        deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-            {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-            {temp, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-        });
-        fillKernelArguments(0, kernelArguments, dst, temp, width, height, gaussianKernel, gaussianKernel_integral, gaussiansize);
-        deviceHelper->device.placeKernel(cmdBuff, verticalPipeline, kernelArguments, verticalbl_x, verticalbl_y, 1);
-        deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-            {temp, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-            {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-        });
+        //the windows 3, 4 and 18: both passes in one kernel (separableBlur.slang), 64x32 outputs per workgroup.
+        //The last argument is the 0 that each sum starts from.
+        const std::string window = std::to_string(gaussiansize);
+        pipeline = deviceHelper->cachedPipeline["separableBlur" + window + "Butter.spv:separableBlur" + window];
+        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, 0.0f);
+        bl_x = (width-1)/64+1;
+        bl_y = (height-1)/32+1;
     }
+    //temp is not needed: neither kernel goes through memory between its two passes
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
+    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
+        {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
+    });
 }
 /*void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
     const int gaussiansize = gaussianHandle.getWindow(i);

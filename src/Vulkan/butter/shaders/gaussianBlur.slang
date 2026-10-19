@@ -1,42 +1,4 @@
 [shader("compute")]
-[numthreads(256, 1, 1)]
-void horizontalBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* src, uniform int64_t w, uniform int64_t h, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform int gaussiansize){
-    int64_t x = threadIdx.x + blockIdx.x*256;
-    int64_t size = w*h;
-    if (x >= size) return;
-
-    int64_t current_line = x/w;
-
-    const int64_t begin = max(x-gaussiansize, current_line*w);
-    const int64_t end = min(x+gaussiansize, (current_line+1)*w-1);
-    float weight = gaussiankernel_integral[gaussiansize+end+1-x]-gaussiankernel_integral[gaussiansize+begin-x];
-
-    float out = 0.0f;
-    for (int64_t i = begin; i <= end; i++){
-        out += src[i]*gaussiankernel[gaussiansize+i-x];
-    }
-    dst[x] = out/weight;
-}
-
-[shader("compute")]
-[numthreads(32, 8, 1)]
-void verticalBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* src, uniform int64_t w, uniform int64_t h, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform int gaussiansize){
-    int64_t x = threadIdx.x + blockIdx.x*32;
-    int64_t y = threadIdx.y + blockIdx.y*8;
-    if (x >= w) return;
-    if (y >= h) return;
-
-    const int64_t begin = max(y-gaussiansize, (int64_t)0);
-    const int64_t end = min(y+gaussiansize, (int64_t)h-1);
-    float weight = gaussiankernel_integral[gaussiansize+end+1-y]-gaussiankernel_integral[gaussiansize+begin-y];;
-    float out = 0.0f;
-    for (int64_t i = begin; i <= end; i++){
-        out += src[i * w + x]*gaussiankernel[gaussiansize+i-y];
-    }
-    dst[y*w+x] = out/weight;
-}
-
-[shader("compute")]
 [numthreads(16, 16, 1)]
 void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
     int64_t originalBl_X = blockIdx.x;

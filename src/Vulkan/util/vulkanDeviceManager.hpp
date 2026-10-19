@@ -55,7 +55,10 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"makeXYBSSIMU2.spv", {"rgb_to_positive_xyb"}},
     {"scoreSSIMU2.spv", {"blurRows", "blurColumnsAndScore"}},
     //Butter
-    {"gaussianBlurButter.spv", {"horizontalBlur", "verticalBlur", "TiledGaussianBlur"}},
+    {"gaussianBlurButter.spv", {"TiledGaussianBlur"}},
+    {"separableBlur3Butter.spv", {"separableBlur3"}},
+    {"separableBlur4Butter.spv", {"separableBlur4"}},
+    {"separableBlur18Butter.spv", {"separableBlur18"}},
     {"downupsampleButter.spv", {"downsample", "addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
     {"colorsButter.spv", {"opsinDynamicsImage"}},
