@@ -131,14 +131,14 @@ float3 inverseMatrixCL(float3 val, Vship_YUVMatrix_t matrix){
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void YUVToLinRGB(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer){
+void YUVToLinRGB(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic){
     const uint64_t x = threadIdx.x + 256*blockIdx.x;
     if (x >= width) return;
 
     float3 val = {p0[x], p1[x], p2[x]};
 
     val = inverseMatrixNCL(val, matrix);
-    val = inverseTransfer(val, transfer);
+    val = inverseTransfer(val, transfer, libjxlArithmetic != 0);
     val = inverseMatrixCL(val, matrix);
 
     p0[x] = val.x;
