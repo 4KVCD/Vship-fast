@@ -99,13 +99,13 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         bl_x = ((width-1)/32+1)*((height-1)/32+1);
         bl_y = 1;
     } else {
-        //the windows 3, 4 and 18: both passes in one kernel (separableBlur.slang), 64x32 outputs per workgroup.
+        //the windows 3, 4 and 18: both passes in one kernel (separableBlur.slang), 32x64 outputs per workgroup.
         //The last argument is the 0 that each sum starts from.
         const std::string window = std::to_string(gaussiansize);
         pipeline = deviceHelper->cachedPipeline["separableBlur" + window + "Butter.spv:separableBlur" + window];
         fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, 0.0f);
-        bl_x = (width-1)/64+1;
-        bl_y = (height-1)/32+1;
+        bl_x = (width-1)/32+1;
+        bl_y = (height-1)/64+1;
     }
     //temp is not needed: neither kernel goes through memory between its two passes
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);

@@ -19,8 +19,9 @@
 
 static const int G = WINDOW;
 static const int TAPS = 2*G + 1;
-static const int TILE_X = 64;
-static const int TILE_Y = 32;
+// 32x64 rather than 64x32: window 18 is 10% faster on a Radeon 8060S (fewer halo rows per output), the others the same
+static const int TILE_X = 32;
+static const int TILE_Y = 64;
 static const int THREADS = 256;
 
 static const int ROWS = TILE_Y + 2*G;          // rows of the row pass: the tile and its halo

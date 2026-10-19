@@ -16,13 +16,17 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     const int tampon_base_x = (int)(x - thx - 8);
     const int tampon_base_y = (int)(y - thy - 8);
 
-    //fill tampon
-    
-    for (int region_x = 0; region_x < 48; region_x += 16){
-        
-        for (int region_y = 0; region_y < 48; region_y += 16){
-            tampon[(thy+region_y)*48+thx+region_x] = (tampon_base_x + thx +region_x >= 0 && tampon_base_x + thx +region_x < width && tampon_base_y + thy + region_y >= 0 && tampon_base_y + thy + region_y < height) ? src[(tampon_base_y+thy+region_y)*width + tampon_base_x+thx+region_x] : 0.f;
-        }
+    //fill tampon: the 9 loads of a thread are all issued before its first store, so that their waits overlap
+    float loaded[9];
+    [ForceUnroll]
+    for (int region = 0; region < 9; region++){
+        const int region_x = 16*(region/3);
+        const int region_y = 16*(region%3);
+        loaded[region] = (tampon_base_x + thx +region_x >= 0 && tampon_base_x + thx +region_x < width && tampon_base_y + thy + region_y >= 0 && tampon_base_y + thy + region_y < height) ? src[(tampon_base_y+thy+region_y)*width + tampon_base_x+thx+region_x] : 0.f;
+    }
+    [ForceUnroll]
+    for (int region = 0; region < 9; region++){
+        tampon[(thy+16*(region%3))*48+thx+16*(region/3)] = loaded[region];
     }
     GroupMemoryBarrierWithGroupSync();
 
