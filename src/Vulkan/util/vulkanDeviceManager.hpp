@@ -77,7 +77,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"lpyrCVVDP.spv", {"baseBandPyrRefine", "gaussPyrExpand", "gaussPyrReduce"}},
     {"fromLpyrToCSFCVVDP.spv", {"fromPyrReduceToCSF"}},
     {"poolingCVVDP.spv", {"reduceSum"}},
-    {"colorsCVVDP.spv", {"XYZ_to_dkl", "displayEncodeBT709", "displayEncodePQ"}},
+    {"colorsCVVDP.spv", {"displayToDKL"}},
     {"temporalFilterCVVDP.spv", {"temporalConvolutionKernel_d"}},
     {"maskingModelCVVDP.spv", {"computeD_baseband", "computeD", "preGaussianPreCompute"}},
     {"resizeCVVDP.spv", {"horizontalResizeTranspose"}},

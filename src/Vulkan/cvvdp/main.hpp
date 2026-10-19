@@ -332,50 +332,26 @@ public:
         converter1.placeConvert(cmdBuff, converterTempMemory);
         converter2.placeConvert(cmdBuff, converterTempMemory+tempSizeConverter1);
 
-        //resize as early as possible if source bigger than resize
+        //resize as early as possible if source bigger than resize; the colour conversion then works in the ring
+        VkDeviceAddress* colorSrc1_d = src1_d;
+        VkDeviceAddress* colorSrc2_d = src2_d;
         if (source_width > resize_width){
             for (int i = 0; i < 3; i++){
                 placeResizePlane(deviceHelper, cmdBuff, filterSrc1_d[i], resizeTemp[0], base_plane1[i], source_width, source_height, resize_width, resize_height);
                 placeResizePlane(deviceHelper, cmdBuff, filterSrc2_d[i], resizeTemp[1], base_plane2[i], source_width, source_height, resize_width, resize_height);
             }
-        } else {
-            //copy src_d into filterSrc
-            for (int i = 0; i < 3; i++){
-                deviceHelper->device.memCpyDtoD(cmdBuff, filterSrc1_d[i], src1_d[i], sizeof(float)*source_width*source_height);
-                deviceHelper->device.memCpyDtoD(cmdBuff, filterSrc2_d[i], src2_d[i], sizeof(float)*source_width*source_height);
-                deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-                    {filterSrc1_d[i], sizeof(float)*source_width*source_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-                    {filterSrc2_d[i], sizeof(float)*source_width*source_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-                    {src1_d[i], sizeof(float)*source_width*source_height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-                    {src2_d[i], sizeof(float)*source_width*source_height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
-                });
-            }
+            colorSrc1_d = filterSrc1_d;
+            colorSrc2_d = filterSrc2_d;
         }
 
-        //now we work on src_d which has size minimum of source and resize
-
+        //the planes, of size minimum of source and resize, through the display model to DKL, into the ring
         const float Y_peak = model->max_luminance;
         const float Y_black = model->getBlackLevel();
         const float Y_refl = model->getReflLevel();
         const float exposure = model->exposure;
         const DisplayColorspace isHDR = model->colorspace;
-
-        //std::cout << "Y_peak, Y_black, Y_refl, exposure : " << Y_peak << " " <<  Y_black << " " << Y_refl << " " << exposure << std::endl;
-
-        //we put the frame's planes on GPU
-        //do we write directly in final after stride eliminaation?
-        for (int i = 0; i < 3; i++){
-            placeDisplayEncode(deviceHelper, cmdBuff, filterSrc1_d[i], minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, ref_colorspace.transferFunction, isHDR);
-            placeDisplayEncode(deviceHelper, cmdBuff, filterSrc2_d[i], minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, dis_colorspace.transferFunction, isHDR);
-        }
-
-        //go to XYZ
-        VshipColorConvert::placePrimariesToPrimaries(deviceHelper, cmdBuff, filterSrc1_d[0], filterSrc1_d[1], filterSrc1_d[2], minwidth*minheight, ref_colorspace.primaries, Vship_PRIMARIES_INTERNAL);
-        VshipColorConvert::placePrimariesToPrimaries(deviceHelper, cmdBuff, filterSrc2_d[0], filterSrc2_d[1], filterSrc2_d[2], minwidth*minheight, dis_colorspace.primaries, Vship_PRIMARIES_INTERNAL);
-
-        //colorspace conversion at this point
-        placeXYZ_to_dkl(deviceHelper, cmdBuff, filterSrc1_d, minwidth*minheight);
-        placeXYZ_to_dkl(deviceHelper, cmdBuff, filterSrc2_d, minwidth*minheight);
+        placeDisplayToDKL(deviceHelper, cmdBuff, colorSrc1_d, filterSrc1_d, minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, ref_colorspace.transferFunction, isHDR, ref_colorspace.primaries);
+        placeDisplayToDKL(deviceHelper, cmdBuff, colorSrc2_d, filterSrc2_d, minwidth*minheight, Y_peak, Y_black, Y_refl, exposure, dis_colorspace.transferFunction, isHDR, dis_colorspace.primaries);
         //and we are done, the frame is loaded in the ring with the right colorspace, next step is temporal filtering
 
         const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
