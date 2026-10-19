@@ -67,10 +67,8 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
     {"separateFrequenciesButter.spv", {
         "subarray_removerangearound0", 
-        "removerangearound0", 
         "subarray_amplifyrangearound0", 
-        "supressXbyY", 
-        "separateHf_Uhf"
+        "supressXbyY"
         }
     },
     //CVVDP

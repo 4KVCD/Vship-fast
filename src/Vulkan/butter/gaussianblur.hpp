@@ -83,8 +83,16 @@ public:
     });
 }*/
 
-//When residual is not 0, it also gets mem_d - dst (windows 3, 4 and 18 only).
-void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i, VkDeviceAddress residual = 0){
+//The passes placeBlur can do after the blur, writing dst and second (postOp in separableBlur.slang; windows 3, 4 and
+//18 only, and second must not be mem_d)
+enum BlurPostOp {
+    BLUR_POST_NONE = 0,
+    BLUR_POST_RESIDUAL = 1,         //second = mem_d - blur
+    BLUR_POST_REMOVE_RANGES = 2,    //subarray_removerangearound0 (1.5) then removerangearound0 (0.04) on second
+    BLUR_POST_SEPARATE_HF_UHF = 3   //separateHf_Uhf of the blur and mem_d
+};
+
+void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i, VkDeviceAddress second = 0, BlurPostOp postOp = BLUR_POST_NONE){
     const int gaussiansize = gaussianHandle.getWindow(i);
     VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
     VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
@@ -104,7 +112,7 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         //0.0f is the 0 that each sum starts from.
         const std::string window = std::to_string(gaussiansize);
         pipeline = deviceHelper->cachedPipeline["separableBlur" + window + "Butter.spv:separableBlur" + window];
-        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, 0.0f, residual, (int)(residual != 0));
+        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, 0.0f, second, (int)postOp);
         bl_x = (width-1)/32+1;
         bl_y = (height-1)/64+1;
     }
@@ -114,7 +122,7 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
     };
-    if (residual != 0) barriers.push_back({residual, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT});
+    if (postOp != BLUR_POST_NONE) barriers.push_back({second, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT});
     deviceHelper->device.placeMemoryBarriers(cmdBuff, barriers);
 }
 /*void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){

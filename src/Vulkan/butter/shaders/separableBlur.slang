@@ -17,11 +17,15 @@
 // For window 3, opsinDynamicsBlur blurs the 3 planes of an image the same way and computes the opsin dynamics from
 // them (opsinModule.slang), each blurred value through opaque() as it came from memory before.
 //
-// When hasResidual is not 0, the kernel also writes src - dst to residual, as the subArray pass that followed the
-// blur did: the blurred value goes through opaque() first, so that the subtraction is not fused with the division's
-// multiplication.
+// postOp makes separableBlur also do the pass that followed the blur, writing dst and second (never src: other
+// workgroups still read its tile borders). The blurred value b goes through opaque() as it went through memory:
+// - POST_RESIDUAL: second = src - b (the subArray pass after the window-18 blur);
+// - POST_REMOVE_RANGES (window 4, X channel): dst = RemoveRangeAroundZero(b, 1.5) and
+//   second = RemoveRangeAroundZero(src - b, 0.04) (subarray_removerangearound0 then removerangearound0);
+// - POST_SEPARATE_HF_UHF (window 4, Y channel): dst and second are separateHf_Uhf of b and src.
 
 import opsinModule;
+import frequencyOpsModule;
 
 #define CONCAT2(a, b) a##b
 #define CONCAT(a, b) CONCAT2(a, b)
@@ -32,6 +36,12 @@ static const int TAPS = 2*G + 1;
 static const int TILE_X = 32;
 static const int TILE_Y = 64;
 static const int THREADS = 256;
+
+// the passes separableBlur can do after the blur (postOp)
+static const int POST_NONE = 0;
+static const int POST_RESIDUAL = 1;
+static const int POST_REMOVE_RANGES = 2;
+static const int POST_SEPARATE_HF_UHF = 3;
 
 static const int ROWS = TILE_Y + 2*G;          // rows of the row pass: the tile and its halo
 static const int IN_PITCH = TILE_X + 2*G + 1;  // odd, so that the lanes reading a column each do not conflict
@@ -143,7 +153,7 @@ void blurTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid
 
 [shader("compute")]
 [numthreads(THREADS, 1, 1)]
-void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* residual, uniform int hasResidual){
+void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* second, uniform int postOp){
     const int tid = (int)threadIdx.x;
     const int x0 = (int)blockIdx.x*TILE_X;
     const int y0 = (int)blockIdx.y*TILE_Y;
@@ -161,8 +171,24 @@ void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
         const int y = y0 + (tid/TILE_X)*COLUMN_RUN + n;
         if (y >= (int)height) return;
         const int64_t pixel = (int64_t)y*width + x;
-        dst[pixel] = blurred[n];
-        if (hasResidual != 0) residual[pixel] = src[pixel] - opaque(blurred[n], asuint(zero));
+        if (postOp == POST_NONE){
+            dst[pixel] = blurred[n];
+            continue;
+        }
+        const float b = opaque(blurred[n], asuint(zero));
+        if (postOp == POST_RESIDUAL){
+            dst[pixel] = blurred[n];
+            second[pixel] = src[pixel] - b;
+        } else if (postOp == POST_REMOVE_RANGES){
+            dst[pixel] = RemoveRangeAroundZero_Device(b, 1.5f);
+            second[pixel] = RemoveRangeAroundZero_Device(opaque(src[pixel] - b, asuint(zero)), 0.04f);
+        } else {
+            float hf = b;
+            float uhf = src[pixel];
+            separateHfUhf(hf, uhf);
+            dst[pixel] = hf;
+            second[pixel] = uhf;
+        }
     }
 }
 
