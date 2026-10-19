@@ -55,7 +55,9 @@ public:
 
         //we create the logS_r_LUT on CPU since they are relatively small and not worth sending;
         for (int band = 0; band < levels; band++){
-            float logrho = std::log10(band_frequencies[band]);
+            //pycvvdp evaluates the CSF of the baseband at 0.1 cycles per degree
+            const float rho = (band == levels-1) ? 0.1f : band_frequencies[band];
+            float logrho = std::log10(rho);
             const int x0 = std::min(30, indexSearch(LUT_logrho, logrho));
             const float slope = (logrho - LUT_logrho[x0])/(LUT_logrho[x0+1] - LUT_logrho[x0]);
             for (int channel = 0; channel < 4; channel++){
