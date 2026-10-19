@@ -3,6 +3,34 @@ import CSFModule;
 static const float kernel_a = 0.4f;
 static const float gaussPyrKernel[5] = {0.25-kernel_a/2.,0.25, kernel_a, 0.25, 0.25-kernel_a/2.};
 
+// A pixel of the plane as pycvvdp's gausspyr_reduce sees it around the image (lpyr_dec.py). The rows are padded
+// symmetrically (-1 -> 0, height -> height-1). The columns too on the left, but on the right gausspyr_reduce picks
+// its padding from the parity of the height instead of the width; when the two parities differ:
+// - odd width: only the second column past the edge gets the last column, the first one is 0;
+// - even width: the last output also adds the last column once more with the weight of the tap next to the
+//   center, which the first column past the edge (weight K4) carries as K3/K4 times the last column.
+float reducePadded(float* plane, int64_t x, int64_t y, int64_t width, int64_t height){
+    if (y < 0) y = -y - 1;
+    if (y >= height) y = 2*height - 1 - y;
+    y = clamp(y, (int64_t)0, height - 1); //only for planes under 3 pixels
+    float* row = plane + y*width;
+    if (x < 0) x = -x - 1;
+    if (x >= width){
+        const bool oddWidth = (width%2) == 1;
+        const bool oddHeight = (height%2) == 1;
+        if (oddWidth == oddHeight){
+            x = 2*width - 1 - x;
+        } else if (oddWidth){
+            if (x == width) return 0.f;
+            x = width - 1;
+        } else {
+            if (x == width) return row[max(width - 2, (int64_t)0)] + (gaussPyrKernel[3]/gaussPyrKernel[4])*row[width - 1];
+            x = width - 1;
+        }
+    }
+    return row[clamp(x, (int64_t)0, width - 1)];
+}
+
 //pyramidSize is the stride of a "big" plane as a whole. mem_d needs to be offset prior using scaleOffset
 //memo: mem_d+scaleOffset+pyramidSize*n = mem_d+pyramidSize*n + scaleOffset (-> we only need mem_d+scaleOffset and not mem_d)
 //this kernel is called for all planes and then all scales successively except the smallest one
@@ -35,21 +63,10 @@ void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_
     //load input in memory
 
     for (int i = thid; i < 23*23; i+=256){
-        int64_t x = base_x-4 + (i%23);
-        int64_t y = base_y-4 + (i/23);
-
-        while (x < 0 || x >= width){
-            if (x < 0) x = -x-1;
-            if (x >= width) x = 2*width - x - 2;
-        }
-
-        while (y < 0 || y >= height){
-            if (y < 0) y = -y-1;
-            if (y >= height) y = 2*height - y - 2;
-        }
-
-        bufferInput[i].x = inputPlane1[y*width+x];
-        bufferInput[i].y = inputPlane2[y*width+x];
+        const int64_t x = base_x-4 + (i%23);
+        const int64_t y = base_y-4 + (i/23);
+        bufferInput[i].x = reducePadded(inputPlane1, x, y, width, height);
+        bufferInput[i].y = reducePadded(inputPlane2, x, y, width, height);
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -88,20 +105,25 @@ void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_
     const int parity_x = thx%2;
     const int parity_y = thy%2;
 
+    //bufferSmallScale[0] is the small scale's pixel base/2 - 1. Like pycvvdp's gausspyr_expand, the small scale
+    //repeats its edge pixels outside the image.
+    const int64_t smallBase_x = base_x/2 - 1;
+    const int64_t smallBase_y = base_y/2 - 1;
     //either in [0,3] or [0, 2]
     for (int dx = 0; dx < 3-parity_x; dx++){
         const float kernelx = 2*gaussPyrKernel[2*dx+parity_x];
+        const int64_t small_x = clamp(smallBase_x + (thx+1)/2 + dx, (int64_t)0, small_width - 1);
         for (int dy = 0; dy < 3-parity_y; dy++){
             const float kernel = kernelx*2*gaussPyrKernel[2*dy+parity_y];
-            expanded += bufferSmallScale[((thy+1)/2 + dy) * 10 + ((thx+1)/2 + dx)]*kernel;
+            const int64_t small_y = clamp(smallBase_y + (thy+1)/2 + dy, (int64_t)0, small_height - 1);
+            expanded += bufferSmallScale[(small_y - smallBase_y) * 10 + (small_x - smallBase_x)]*kernel;
         }
     }
 
     //clamp + export this value as Lbkg if channel = 0 or read otherwise
     float2 lbkg = {0.f, 0.f};
     if (channel == 0){
-        expanded = max(expanded, 0.01f);
-        lbkg = expanded;
+        lbkg = max(expanded, 0.01f);
         if (glx < width && gly < height) {
             Lbkg1[gly*width+glx] = lbkg.x;
             Lbkg2[gly*width+glx] = lbkg.y;
