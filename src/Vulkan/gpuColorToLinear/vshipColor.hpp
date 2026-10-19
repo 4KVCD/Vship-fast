@@ -278,7 +278,7 @@ public:
             //resize and crop (we are still in linear space)
             VkDeviceAddress base = intermediatePlanes[i];
             VkDeviceAddress interm = temp;
-            VkDeviceAddress interm2 = temp + maxWidth*maxHeight;
+            VkDeviceAddress interm2 = temp + sizeof(float)*maxWidth*maxHeight;
             VkDeviceAddress fin = outPlanes[i];
             if (isCropped && isResized){
                 //std::cout << source_colorspace.width << "x" << source_colorspace.height << " / " << source_colorspace.target_width << "x" << source_colorspace.target_height << std::endl;
