@@ -4,7 +4,10 @@ namespace cvvdp{
 
 #include "../util/vulkanDeviceManager.hpp"
 
-void placeFromPyrReduceToCSF(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress mem_d2, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, CSF_Handler& csfhandle){
+//channels firstChannel .. firstChannel+channels-1 of a band in one dispatch; channel 0 must be done before the others
+void placeFromPyrReduceToCSF(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress mem_d2, const int64_t pyramidSize, const int64_t width, const int64_t height, const int scale, const int channel, const int channels, CSF_Handler& csfhandle){
+    //the dispatch's planes of a kind are pyramidSize apart
+    const int64_t planesSpan = pyramidSize*(channels-1);
     const int64_t small_width = (width+1)/2;
     const int64_t small_height = (height+1)/2;
 
@@ -16,19 +19,19 @@ void placeFromPyrReduceToCSF(VshipDeviceHelper* deviceHelper, VkCommandBuffer cm
     VkPipeline pipeline = deviceHelper->cachedPipeline["fromLpyrToCSFCVVDP.spv:fromPyrReduceToCSF"];
     uint8_t kernelArguments[128];
     fillKernelArguments(0, kernelArguments, mem_d, mem_d2, csfhandle.mem_d, pyramidSize, width, height, scale, channel);
-    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, channels);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         //read input luminance plane
-        {mem_d+sizeof(float)*pyramidSize*channel, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {mem_d2+sizeof(float)*pyramidSize*channel, sizeof(float)*width*height, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {mem_d+sizeof(float)*pyramidSize*channel, sizeof(float)*(planesSpan+width*height), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*channel, sizeof(float)*(planesSpan+width*height), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
 
         //write contrast
-        {mem_d+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {mem_d2+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*width*height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*(planesSpan+width*height), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*(channel+5), sizeof(float)*(planesSpan+width*height), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
 
         //write smallScale
-        {mem_d+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*small_width*small_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {mem_d2+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*small_width*small_height, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*(planesSpan+small_width*small_height), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {mem_d2+sizeof(float)*pyramidSize*channel+sizeof(float)*width*height, sizeof(float)*(planesSpan+small_width*small_height), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
 
         //write OR read Lbkg depending on channel 0
         {mem_d+sizeof(float)*pyramidSize*4, sizeof(float)*width*height, (channel == 0) ? VK_ACCESS_2_MEMORY_WRITE_BIT : VK_ACCESS_2_MEMORY_READ_BIT, (channel == 0) ? VK_ACCESS_2_MEMORY_READ_BIT : VK_ACCESS_2_MEMORY_WRITE_BIT},

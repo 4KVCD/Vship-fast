@@ -34,10 +34,12 @@ float reducePadded(float* plane, int64_t x, int64_t y, int64_t width, int64_t he
 //pyramidSize is the stride of a "big" plane as a whole. mem_d needs to be offset prior using scaleOffset
 //memo: mem_d+scaleOffset+pyramidSize*n = mem_d+pyramidSize*n + scaleOffset (-> we only need mem_d+scaleOffset and not mem_d)
 //this kernel is called for all planes and then all scales successively except the smallest one
-//both sources are treated at once
+//both sources are treated at once; a dispatch does channels firstChannel.. (blockIdx.z): channel 0 alone, as it
+//writes the Lbkg the others read, then channels 1 to 3 together
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* mem_d, uniform float* mem_d2, uniform float* CSFMem_d, uniform int64_t pyramidSize, uniform int64_t width, uniform int64_t height, uniform int scale, uniform int channel){
+void fromPyrReduceToCSF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* mem_d, uniform float* mem_d2, uniform float* CSFMem_d, uniform int64_t pyramidSize, uniform int64_t width, uniform int64_t height, uniform int scale, uniform int firstChannel){
+    const int channel = firstChannel + (int)blockIdx.z;
     const int64_t base_x = blockIdx.x * 16;
     const int64_t base_y = blockIdx.y * 16;
     const int thx = threadIdx.x;

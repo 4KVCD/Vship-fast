@@ -127,9 +127,8 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     h = resize_height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
-            for (int channel = 0; channel < 4; channel++){
-                placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, channel, csfhandle);
-            }
+            placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, 0, 1, csfhandle);
+            placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, 1, 3, csfhandle);
             placeComputeD(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle);
         } else {
             //baseband
