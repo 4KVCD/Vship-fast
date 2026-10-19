@@ -1,5 +1,6 @@
 import vshipColorModule;
 import inverseTransferModule;
+import vshipBicubicModule;
 
 float3 ncl_yuv_to_rgb_from_kr_kb(float3 val, const float Kr, const float Kb){
     const float Kg = 1.f-Kb-Kr;
@@ -144,4 +145,74 @@ void YUVToLinRGB(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID
     p0[x] = val.x;
     p1[x] = val.y;
     p2[x] = val.z;
+}
+
+// The vertical upsampling of the chroma that YUVToLinRGBUpsampled does for each pixel, as the
+// bicubicVertical*Upscale* kernels of chromaUpsample.slang do it (chromaVerticalMode in chromaUpsample.hpp)
+static const int VERTICAL_NONE = 0;      // the chroma has the frame's rows
+static const int VERTICAL_CENTER_X2 = 1;
+static const int VERTICAL_TOP_X2 = 2;
+static const int VERTICAL_CENTER_X4 = 3;
+static const int VERTICAL_TOP_X4 = 4;
+
+// The chroma of row r of the frame at column x, src holding the chroma at full width
+float upsampledChroma(float* src, int64_t x, int64_t r, int64_t width, int64_t height, int verticalMode){
+    if (verticalMode == VERTICAL_CENTER_X2){
+        //bicubicVerticalCenterUpscaleX2: rows 2y+1 and 2y+2 at 0.25 and 0.75 of [y, y+1]
+        const int64_t smallheight = (height-1)/2+1;
+        return getCubicHermitSpline(getVerticalInterpolator_device(src, x, (r-1) >> 1, width, smallheight), ((r & 1) == 1) ? 0.25f : 0.75f);
+    }
+    if (verticalMode == VERTICAL_TOP_X2){
+        //bicubicVerticalTopUpscaleX2: row 2y is row y, row 2y+1 at 0.5 of [y, y+1]
+        const int64_t smallheight = (height-1)/2+1;
+        if ((r & 1) == 0) return src[(r >> 1)*width + x];
+        return getCubicHermitSpline(getVerticalInterpolator_device(src, x, r >> 1, width, smallheight), 0.5f);
+    }
+    if (verticalMode == VERTICAL_CENTER_X4){
+        //bicubicVerticalCenterUpscaleX4: rows 4y+2 to 4y+5 at 0.125, 0.375, 0.625 and 0.875 of [y, y+1]
+        const int64_t smallheight = (height-1)/4+1;
+        const int phase = (int)((r-2) & 3);
+        const float t = (phase == 0) ? 0.125f : ((phase == 1) ? 0.375f : ((phase == 2) ? 0.625f : 0.875f));
+        return getCubicHermitSpline(getVerticalInterpolator_device(src, x, (r-2) >> 2, width, smallheight), t);
+    }
+    if (verticalMode == VERTICAL_TOP_X4){
+        //bicubicVerticalTopUpscaleX4: row 4y is row y, rows 4y+1 to 4y+3 at 0.25, 0.5 and 0.75 of [y, y+1]
+        const int64_t smallheight = (height-1)/4+1;
+        const int phase = (int)(r & 3);
+        if (phase == 0) return src[(r >> 2)*width + x];
+        const float t = (phase == 1) ? 0.25f : ((phase == 2) ? 0.5f : 0.75f);
+        return getCubicHermitSpline(getVerticalInterpolator_device(src, x, r >> 2, width, smallheight), t);
+    }
+    return src[r*width + x];
+}
+
+// Returns x. Its bits go through an OR with a zero only known at run time, so that the compiler cannot fuse the
+// operations that produced x with those that use it: the upsampled chroma used to go through memory.
+float unfused(float x, uint zero){
+    return asfloat(asuint(x) | zero);
+}
+
+// YUVToLinRGB with the chroma's vertical upsampling done for each pixel instead of in a pass of its own: the
+// chroma comes from chroma1 and chroma2 (full width, verticalMode says which rows), the luma from p0, and the
+// linear RGB goes to p0, p1 and p2. chroma1 and chroma2 may be p1 and p2 when verticalMode is VERTICAL_NONE.
+// One thread per pixel, blockIdx.y the row.
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void YUVToLinRGBUpsampled(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* p0, uniform float* p1, uniform float* p2, uniform float* chroma1, uniform float* chroma2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform uint zero){
+    const int64_t width = (int64_t)width64;
+    const int64_t height = (int64_t)height64;
+    const int64_t x = threadIdx.x + 256*blockIdx.x;
+    const int64_t r = blockIdx.y;
+    if (x >= width) return;
+    const int64_t i = r*width + x;
+
+    float3 val = {p0[i], unfused(upsampledChroma(chroma1, x, r, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, r, width, height, verticalMode), zero)};
+
+    val = inverseMatrixNCL(val, matrix);
+    val = inverseTransfer(val, transfer, libjxlArithmetic != 0);
+    val = inverseMatrixCL(val, matrix);
+
+    p0[i] = val.x;
+    p1[i] = val.y;
+    p2[i] = val.z;
 }

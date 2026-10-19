@@ -2,12 +2,12 @@
 
 namespace VshipColorConvert{
 
-//temp is of size 2 planes
-//source is of size width * height possibly chroma downsampled
-int placeChromaUpsample(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress temp, VkDeviceAddress src[3], uint64_t width, uint64_t height, Vship_ChromaLocation_t location, Vship_ChromaSubsample_t subsampledata){
+//The horizontal half of placeChromaUpsample: the chroma planes of src at full width into temp (width*smallheight
+//each), 0 if supported. Nothing to do without subsampling.
+int placeChromaUpsampleHorizontal(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress temp, VkDeviceAddress src[3], uint64_t width, uint64_t height, Vship_ChromaLocation_t location, Vship_ChromaSubsample_t subsampledata){
     const int subw = subsampledata.subw;
     const int subh = subsampledata.subh;
-    
+
     if (subw == 0 && subh == 0) return 0;
     int64_t smallwidth = ((width-1) >> subw)+1;
     int64_t smallheight = ((height-1) >> subh)+1;
@@ -74,14 +74,45 @@ int placeChromaUpsample(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff
         {src[1], sizeof(float)*smallwidth*smallheight, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {src[2], sizeof(float)*smallwidth*smallheight, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });
+    return 0;
+}
+
+//The vertical upsampling YUVToLinRGBUpsampled does for each pixel (VERTICAL_* in shaders/YUVToLinRGB.slang), -1 if
+//not supported
+int chromaVerticalMode(Vship_ChromaLocation_t location, int subh){
+    if (subh == 0) return 0;
+    if (subh > 2) return -1;
+    switch (location){
+        case (Vship_ChromaLoc_Top):
+        case (Vship_ChromaLoc_TopLeft):
+            return (subh == 1) ? 2 : 4;
+        case (Vship_ChromaLoc_Center):
+        case (Vship_ChromaLoc_Left):
+            return (subh == 1) ? 1 : 3;
+        default:
+            return -1;
+    }
+}
+
+//temp is of size 2 planes
+//source is of size width * height possibly chroma downsampled
+int placeChromaUpsample(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress temp, VkDeviceAddress src[3], uint64_t width, uint64_t height, Vship_ChromaLocation_t location, Vship_ChromaSubsample_t subsampledata){
+    const int subw = subsampledata.subw;
+    const int subh = subsampledata.subh;
+
+    if (subw == 0 && subh == 0) return 0;
+    if (placeChromaUpsampleHorizontal(deviceHelper, cmdBuff, temp, src, width, height, location, subsampledata) != 0) return 1;
+    const int64_t smallheight = ((height-1) >> subh)+1;
+    const int thx = 16;
+    const int thy = 16;
 
     if (subh == 0){
         deviceHelper->device.memCpyDtoD(cmdBuff, src[1], temp, sizeof(float)*width*smallheight);
         deviceHelper->device.memCpyDtoD(cmdBuff, src[2], temp+sizeof(float)*width*smallheight, sizeof(float)*width*smallheight);
     }
 
-    blx = (width + thx-1)/thx;
-    bly = (smallheight+1 + thy-1)/thy;
+    int blx = (width + thx-1)/thx;
+    int bly = (smallheight+1 + thy-1)/thy;
 
     switch (location){
         case (Vship_ChromaLoc_Top):

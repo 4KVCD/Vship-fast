@@ -211,8 +211,21 @@ public:
     void placeConvert(VkCommandBuffer cmdbuff, VkDeviceAddress temp){
         uint64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
         uint64_t maxHeight= std::max(source_colorspace.target_height, source_colorspace.height);
-        if (placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, source_colorspace.subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
-        placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction, libjxlArithmetic);
+        const Vship_ChromaSubsample_t subsampling = source_colorspace.subsampling;
+        const int verticalMode = chromaVerticalMode(source_colorspace.chromaLocation, subsampling.subh);
+        const bool toLinRGB = !(source_colorspace.transferFunction == Vship_TRC_Linear && source_colorspace.YUVMatrix == Vship_MATRIX_RGB);
+        if (toLinRGB && verticalMode >= 0){
+            //the chroma's horizontal upsampling into temp, then its vertical upsampling within the conversion to linear RGB
+            if (placeChromaUpsampleHorizontal(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
+            const bool subsampled = (subsampling.subw != 0 || subsampling.subh != 0);
+            const int64_t chromaHeight = ((height-1) >> subsampling.subh)+1;
+            const VkDeviceAddress chroma1 = subsampled ? temp : intermediatePlanes[1];
+            const VkDeviceAddress chroma2 = subsampled ? temp+sizeof(float)*width*chromaHeight : intermediatePlanes[2];
+            placeYUVToLinRGBUpsampled(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], chroma1, chroma2, width, height, chromaHeight, verticalMode, source_colorspace.YUVMatrix, source_colorspace.transferFunction, libjxlArithmetic);
+        } else {
+            if (placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
+            placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction, libjxlArithmetic);
+        }
         //then we manage primaries, it depends on the destination
         switch(destination){
             case linRGB:

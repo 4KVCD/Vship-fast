@@ -49,7 +49,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     },
     {"resize.spv", {"horizontalResizeTranspose"}},
     {"primaries.spv", {"primariesToPrimaries"}},
-    {"YUVToLinRGB.spv", {"YUVToLinRGB"}},
+    {"YUVToLinRGB.spv", {"YUVToLinRGB", "YUVToLinRGBUpsampled"}},
     //SSIMU2
     {"downsampleSSIMU2.spv", {"downsample"}},
     {"makeXYBSSIMU2.spv", {"rgb_to_positive_xyb"}},
