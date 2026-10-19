@@ -51,63 +51,70 @@ void preGaussianPreCompute(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : 
 }
 
 static groupshared float tampon[32*32];
+static const int PU_RADIUS = 6; //puRadius in gaussianBlur.hpp
+static const int PU_PADSIZE = 6; //pycvvdp blurs only bands larger than this in both directions
 
-//tampon should be groupshared memory of size 32*32
+// pycvvdp's safe_pow: (x + 1e-5)^p - 1e-5^p. The GPU's pow may round x = 0 slightly below the
+// constant, so the result is clamped at 0 (a negative value would make the pooling's pow NaN).
+float safe_pow(float x, float p){
+    const float epsilon = 0.00001f;
+    return max(pow(x + epsilon, p) - pow(epsilon, p), 0.f);
+}
+
+// torch's reflect padding: -1 -> 1, size -> size-2
+int64_t reflect(int64_t x, int64_t size){
+    if (size == 1) return 0; //a single pixel reflects onto itself
+    while (x < 0 || x >= size){
+        x = (x < 0) ? -x : 2*size - 2 - x;
+    }
+    return x;
+}
+
+// Loads min(|src1|, |src2|) for this 16x16 block and a halo of 8 pixels into tampon, reflected at the borders.
 void GaussianSmartSharedLoadMinAbs(const int thx, const int thy, float* src1, float* src2, int64_t x, int64_t y, int64_t width, int64_t height){
     const int64_t tampon_base_x = x - thx - 8;
     const int64_t tampon_base_y = y - thy - 8;
-
-    //fill tampon
-    //fill tampon
-    tampon[thy*32+thx] = (tampon_base_x + thx >= 0 && tampon_base_x + thx < width && tampon_base_y + thy >= 0 && tampon_base_y + thy < height) ? min(abs(src1[(tampon_base_y+thy)*width + tampon_base_x+thx]), abs(src2[(tampon_base_y+thy)*width + tampon_base_x+thx])) : 0.f;
-    tampon[(thy+16)*32+thx] = (tampon_base_x + thx >= 0 && tampon_base_x + thx < width && tampon_base_y + thy + 16 >= 0 && tampon_base_y + thy + 16 < height) ? min(abs(src1[(tampon_base_y+thy+16)*width + tampon_base_x+thx]), abs(src2[(tampon_base_y+thy+16)*width + tampon_base_x+thx])) : 0.f;
-    tampon[thy*32+thx+16] = (tampon_base_x + thx +16 >= 0 && tampon_base_x + thx +16 < width && tampon_base_y + thy >= 0 && tampon_base_y + thy < height) ? min(abs(src1[(tampon_base_y+thy)*width + tampon_base_x+thx+16]), abs(src2[(tampon_base_y+thy)*width + tampon_base_x+thx+16])) : 0.f;
-    tampon[(thy+16)*32+thx+16] = (tampon_base_x + thx +16 >= 0 && tampon_base_x + thx +16 < width && tampon_base_y + thy + 16 >= 0 && tampon_base_y + thy + 16 < height) ? min(abs(src1[(tampon_base_y+thy+16)*width + tampon_base_x+thx+16]), abs(src2[(tampon_base_y+thy+16)*width + tampon_base_x+thx+16])) : 0.f;
+    for (int dy = 0; dy < 32; dy += 16){
+        for (int dx = 0; dx < 32; dx += 16){
+            const int64_t pixel = reflect(tampon_base_y + thy + dy, height)*width + reflect(tampon_base_x + thx + dx, width);
+            tampon[(thy+dy)*32 + thx+dx] = min(abs(src1[pixel]), abs(src2[pixel]));
+        }
+    }
     GroupMemoryBarrierWithGroupSync();
 }
 
-//a whole block of 16x16 should into there, x and y corresponds to their real position in the src (or slighly outside)
-//at the end, the central 16*16 part of tampon contains the blurred value for each thread
-//tampon is of size 32*32
-float GaussianSmart_Device(const int thx, const int thy, int64_t x, int64_t y, int64_t width, int64_t height, float* gaussiankernel, float* gaussiankernel_integral){
-    //horizontalBlur on tampon restraint into rectangle [8 - 24][0 - 32] -> 2 pass per thread
-
-    //1st pass in [8 - 24][0 - 16]
-    float tot;
+// pycvvdp's phase uncertainty blur of the value loaded for this thread's pixel: the 13-tap kernel horizontally
+// then vertically. Bands of 6 pixels or less in either direction are not blurred, like pycvvdp.
+float GaussianSmart_Device(const int thx, const int thy, int64_t width, int64_t height, float* gaussiankernel){
+    if (width <= PU_PADSIZE || height <= PU_PADSIZE){
+        const float center = tampon[(thy+8)*32 + thx+8];
+        GroupMemoryBarrierWithGroupSync(); //tampon is loaded again for the next channel
+        return center;
+    }
     float out = 0.f;
     float out2 = 0.f;
-    //border handling precompute
-    int64_t beg = max((int64_t)0, x-8)-(x-8);
-    int64_t end2 = min(width, x+9)-min(width, (x-8));
-    tot = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
-    for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-        out += tampon[thy*32 + thx+i]*gaussiankernel[i];
-        //2nd pass in [8 - 24][16 - 32]
-        out2 += tampon[(thy+16)*32 + thx+i]*gaussiankernel[i];
+    for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
+        out += tampon[thy*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
+        out2 += tampon[(thy+16)*32 + thx+8+i]*gaussiankernel[i+PU_RADIUS];
     }
     GroupMemoryBarrierWithGroupSync();
-    tampon[thy*32 + thx+8] = out/tot;
-    tampon[(thy+16)*32 + thx+8] = out2/tot;
+    tampon[thy*32 + thx+8] = out;
+    tampon[(thy+16)*32 + thx+8] = out2;
     GroupMemoryBarrierWithGroupSync();
 
-    //verticalBlur on tampon[tamponOffset] restraint into rectangle [8 - 24][8 - 24] -> 1 pass per thread
     out = 0.f;
-    beg = max((int64_t)0, y-8)-(y-8);
-    end2 = min(height, y+9)-min(height, (y-8));
-    tot = gaussiankernel_integral[end2] - gaussiankernel_integral[beg];
-    for (int i = 0; i < 17; i++){ //starting 8 to the left and going 8 to the right
-        out += tampon[(thy+i)*32 + thx+8]*gaussiankernel[i];
+    for (int i = -PU_RADIUS; i <= PU_RADIUS; i++){
+        out += tampon[(thy+8+i)*32 + thx+8]*gaussiankernel[i+PU_RADIUS];
     }
-
     GroupMemoryBarrierWithGroupSync();
-    return out/tot;
+    return out;
 }
 
 //works for a band  but does all channels. It writes result on source ref
 //work on 16x16 blocks
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* out0, uniform float* out1, uniform float* out2, uniform float* out3, uniform float* R0, uniform float* R1, uniform float* R2, uniform float* R3, uniform float* T0, uniform float* T1, uniform float* T2, uniform float* T3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
+void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* out0, uniform float* out1, uniform float* out2, uniform float* out3, uniform float* R0, uniform float* R1, uniform float* R2, uniform float* R3, uniform float* T0, uniform float* T1, uniform float* T2, uniform float* T3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel){
     const int64_t x = (threadIdx.x + blockIdx.x*16);
     const int64_t y = (threadIdx.y + blockIdx.y*16);
     const int64_t id = y*width + x;
@@ -115,20 +122,20 @@ void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     const float powmaskc = pow(10, mask_c);
 
     GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R0, T0, x, y, width, height);
-    const float blurred0 = GaussianSmart_Device(threadIdx.x, threadIdx.y, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    const float blurred_Cm0 = pow(powmaskc*abs(blurred0), mask_q[0]);
+    const float blurred0 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
+    const float blurred_Cm0 = safe_pow(powmaskc*abs(blurred0), mask_q[0]);
 
     GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R1, T1, x, y, width, height);
-    const float blurred1 = GaussianSmart_Device(threadIdx.x, threadIdx.y, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    const float blurred_Cm1 = pow(powmaskc*abs(blurred1), mask_q[1]);
+    const float blurred1 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
+    const float blurred_Cm1 = safe_pow(powmaskc*abs(blurred1), mask_q[1]);
 
     GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R2, T2, x, y, width, height);
-    const float blurred2 = GaussianSmart_Device(threadIdx.x, threadIdx.y, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    const float blurred_Cm2 = pow(powmaskc*abs(blurred2), mask_q[2]);
+    const float blurred2 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
+    const float blurred_Cm2 = safe_pow(powmaskc*abs(blurred2), mask_q[2]);
 
     GaussianSmartSharedLoadMinAbs(threadIdx.x, threadIdx.y, R3, T3, x, y, width, height);
-    const float blurred3 = GaussianSmart_Device(threadIdx.x, threadIdx.y, x, y, width, height, gaussiankernel, gaussiankernel_integral);
-    const float blurred_Cm3 = pow(powmaskc*abs(blurred3), mask_q[3]);
+    const float blurred3 = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
+    const float blurred_Cm3 = safe_pow(powmaskc*abs(blurred3), mask_q[3]);
 
     const float Cmask0 = fma(blurred_Cm0, pow(2.f, xcm_weights[0]), fma(blurred_Cm1, pow(2.f, xcm_weights[4]), fma(blurred_Cm2, pow(2.f, xcm_weights[8]), blurred_Cm3*pow(2.f, xcm_weights[12]))));
     const float Cmask1 = fma(blurred_Cm0, pow(2.f, xcm_weights[1]), fma(blurred_Cm1, pow(2.f, xcm_weights[5]), fma(blurred_Cm2, pow(2.f, xcm_weights[9]), blurred_Cm3*pow(2.f, xcm_weights[13]))));
@@ -137,10 +144,10 @@ void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     //if (id == 0) printf("Cmask: %f %f %f %f from %f %f %f %f\n", Cmask0, Cmask1, Cmask2, Cmask3, blurred_Cm0, blurred_Cm1, blurred_Cm2, blurred_Cm3);
 
     if (x >= width || y >= height) return;
-    const float Du0 = pow(abs(R0[id] - T0[id]), mask_p)/(1+Cmask0);
-    const float Du1 = pow(abs(R1[id] - T1[id]), mask_p)/(1+Cmask1);
-    const float Du2 = pow(abs(R2[id] - T2[id]), mask_p)/(1+Cmask2);
-    const float Du3 = pow(abs(R3[id] - T3[id]), mask_p)/(1+Cmask3);
+    const float Du0 = safe_pow(abs(R0[id] - T0[id]), mask_p)/(1+Cmask0);
+    const float Du1 = safe_pow(abs(R1[id] - T1[id]), mask_p)/(1+Cmask1);
+    const float Du2 = safe_pow(abs(R2[id] - T2[id]), mask_p)/(1+Cmask2);
+    const float Du3 = safe_pow(abs(R3[id] - T3[id]), mask_p)/(1+Cmask3);
 
     //if (id == 0) printf("D width %d: %f %f %f %f vs %f %f %f %f with mask %f %f %f %f\n", width, R0[id], R1[id], R2[id], R3[id], T0[id], T1[id], T2[id], T3[id], Cmask0, Cmask1, Cmask2, Cmask3);
     //if (id == 13*1024 + 64 && width == 827) printf("D width %d: %f %f %f %f\n", width, Du0, Du1, Du2, Du3);
