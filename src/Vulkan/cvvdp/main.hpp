@@ -197,6 +197,8 @@ class CVVDPComputingImplementation{
 
     VshipDeviceHelper* deviceHelper;
     VkCommandPoolManager* commandPool; //contains 4 buffers -> preprocess, runtime frame To Gpu, runtime metric process, runtime distmap
+    VkCommandPoolManager* uploadPool; //one buffer for the copies of the input frames
+    VkSemaphore uploadSemaphore;
     VkDeviceAddress mem_d;
     VkDeviceAddress converterTempMemory;
     FenceManager* fence;
@@ -226,6 +228,7 @@ public:
         ref_colorspace = source_colorspace;
         dis_colorspace = source_colorspace2;
         commandPool = deviceHelper->device.createCmdPool(4, 0);
+        uploadPool = deviceHelper->device.createUploadCmdPool(1);
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
         this->source_width = VshipColorConvert::getColorspaceWidth(source_colorspace);
         this->source_height = VshipColorConvert::getColorspaceHeight(source_colorspace);
@@ -272,6 +275,7 @@ public:
         semaphores.resize(2);
         semaphores[0] = deviceHelper->device.createSemaphores();
         semaphores[1] = deviceHelper->device.createSemaphores();
+        uploadSemaphore = deviceHelper->device.createSemaphores();
 
         //here we define the final destination of our color converted frames
         converter1.init(source_colorspace, VshipColorConvert::linRGB, deviceHelper, src1_d);
@@ -322,14 +326,27 @@ public:
         converter2.destroy();
         delete model;
         delete commandPool;
+        delete uploadPool;
         delete fence;
         deviceHelper->device.destroySemaphores(semaphores[0]);
         deviceHelper->device.destroySemaphores(semaphores[1]);
+        deviceHelper->device.destroySemaphores(uploadSemaphore);
         deviceHelper->device.freeDevice(mem_d);
         if (outputCPU != NULL) deviceHelper->device.freeHost((void*)outputCPU);
         deviceHelper->device.freeHost((void*)outputScoresCPU);
     }
-    void placeLoadImageToRing(VkCommandBuffer cmdBuff, const uint8_t *srcp1[3], const uint8_t *srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
+    //records the copies of the two frames to the GPU, for the upload queue: placeLoadImageToRing's conversion uses them
+    VkCommandBuffer recordUpload(const uint8_t *srcp1[3], const uint8_t *srcp2[3], const int64_t lineSize[3], const int64_t lineSize2[3]){
+        VkCommandBuffer uploadCmd = uploadPool->primaryCommandBuffers[0];
+        resetCmdBuffer(uploadCmd);
+        beginCmdBuffer(uploadCmd);
+        size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
+        converter1.placeUpload(uploadCmd, srcp1, lineSize, converterTempMemory);
+        converter2.placeUpload(uploadCmd, srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        endCmdBuffer(uploadCmd);
+        return uploadCmd;
+    }
+    void placeLoadImageToRing(VkCommandBuffer cmdBuff){
         VkDeviceAddress src1_d[3] = {mem_d, mem_d+sizeof(float)*source_width*source_height, mem_d+sizeof(float)*2*source_width*source_height};
         VkDeviceAddress src2_d[3] = {mem_d+sizeof(float)*3*source_width*source_height, mem_d+sizeof(float)*4*source_width*source_height, mem_d+sizeof(float)*5*source_width*source_height};
         VkDeviceAddress resizeTemp[2] = {mem_d+sizeof(float)*6*source_width*source_height, mem_d+sizeof(float)*6*source_width*source_height+source_height*resize_width*sizeof(float)};
@@ -363,10 +380,10 @@ public:
             }
         }
 
+        //the frames were copied to the GPU by recordUpload
         size_t tempSizeConverter1 = converter1.getTempMemoryNeeded();
-        //we perform the whole conversion directly
-        converter1.placeToGPUBuffer(cmdBuff, srcp1, lineSize, converterTempMemory);
-        converter2.placeToGPUBuffer(cmdBuff, srcp2, lineSize2, converterTempMemory+tempSizeConverter1);
+        converter1.placeToFloat(cmdBuff);
+        converter2.placeToFloat(cmdBuff);
         converter1.placeConvert(cmdBuff, converterTempMemory);
         converter2.placeConvert(cmdBuff, converterTempMemory+tempSizeConverter1);
 
@@ -412,13 +429,14 @@ public:
         auto& cmdBuffs = commandPool->primaryCommandBuffers;
 
         //create bufferToGPU
+        VkCommandBuffer uploadCmd = recordUpload(srcp1, srcp2, lineSize, lineSize2);
         resetCmdBuffer(cmdBuffs[1]);
         beginCmdBuffer(cmdBuffs[1]);
-        placeLoadImageToRing(cmdBuffs[1], srcp1, srcp2, lineSize, lineSize2);
+        placeLoadImageToRing(cmdBuffs[1]);
         endCmdBuffer(cmdBuffs[1]);
 
-        //now we can execute cmdBuffs1
-        deviceHelper->device.executeBuffers(cmdBuffs.data()+1, semaphores.data(), 1, fence);
+        //now we can execute cmdBuffs1 after the upload
+        deviceHelper->device.executeUploadThenBuffers(uploadCmd, uploadSemaphore, cmdBuffs.data()+1, semaphores.data(), 1, fence);
         //then we have nothing else to do that wait
         fence->synchronize();
     }
@@ -430,9 +448,10 @@ public:
         uint levels = get_frequencies(resize_width, resize_height, ppd).size();
 
         //create bufferToGPU
+        VkCommandBuffer uploadCmd = recordUpload(srcp1, srcp2, lineSize, lineSize2);
         resetCmdBuffer(cmdBuffs[1]);
         beginCmdBuffer(cmdBuffs[1]);
-        placeLoadImageToRing(cmdBuffs[1], srcp1, srcp2, lineSize, lineSize2);
+        placeLoadImageToRing(cmdBuffs[1]);
         endCmdBuffer(cmdBuffs[1]);
         
         bool isHostAllocated;
@@ -449,7 +468,7 @@ public:
         }
 
         //now we can execute cmdBuffs1, 2 and eventually 3 but synchronized by semaphores
-        deviceHelper->device.executeBuffers(cmdBuffs.data()+1, semaphores.data(), (dstp != NULL) ? 3 : 2, fence);
+        deviceHelper->device.executeUploadThenBuffers(uploadCmd, uploadSemaphore, cmdBuffs.data()+1, semaphores.data(), (dstp != NULL) ? 3 : 2, fence);
         //then we have nothing else to do that wait
         fence->synchronize();
         //output should be in outputCPU
