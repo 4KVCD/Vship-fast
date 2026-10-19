@@ -66,8 +66,6 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"combineMasksButter.spv", {"computeDiffmap"}},
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
     {"separateFrequenciesButter.spv", {
-        "subarray_removerangearound0", 
-        "subarray_amplifyrangearound0", 
         "supressXbyY"
         }
     },

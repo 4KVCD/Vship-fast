@@ -1,6 +1,13 @@
+import frequencyOpsModule;
+
+// the passes TiledGaussianBlur can do after the blur (postOp), as BlurPostOp in gaussianblur.hpp
+static const int POST_NONE = 0;
+static const int POST_SUBTRACT_REMOVE_RANGE = 4;
+static const int POST_SUBTRACT_AMPLIFY_RANGE = 5;
+
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
+void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float* second, uniform int postOp, uniform float w){
     int64_t originalBl_X = blockIdx.x;
     //let's determine which scale our block is in and adjust our input parameters accordingly
 
@@ -88,12 +95,23 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     }
     GroupMemoryBarrierWithGroupSync();
 
-    //if (x == 0 && y == 0) debugAddress[0] = float4(tampon[(8+0*16)*48+8+0*16], tampon[(8+1*16)*48+8+0*16], 1, 2);
-    
+    // postOp: also the pass that followed the blur, on the blurred value b read back from tampon (as it was read back
+    // from dst before): second = src - b, and dst = RemoveRangeAroundZero(b, w) (subarray_removerangearound0) or
+    // AmplifyRangeAroundZero(b, w) (subarray_amplifyrangearound0). second must not be src, whose tile borders other
+    // workgroups still read.
     for (int region_x = 0; region_x < 2; region_x++){
-        
+
         for (int region_y = 0; region_y < 2; region_y++){
-            if (tampon_base_x + thx +8+region_x*16 >= 0 && tampon_base_x + thx +8+region_x*16 < width && tampon_base_y + thy +8+region_y*16 >= 0 && tampon_base_y + thy +8+region_y*16 < height) dst[(tampon_base_y+thy+8+region_y*16)*width + tampon_base_x+thx+8+region_x*16] = tampon[(thy+8+region_y*16)*48+thx+8+region_x*16];
+            if (tampon_base_x + thx +8+region_x*16 >= 0 && tampon_base_x + thx +8+region_x*16 < width && tampon_base_y + thy +8+region_y*16 >= 0 && tampon_base_y + thy +8+region_y*16 < height){
+                const int64_t pixel = (tampon_base_y+thy+8+region_y*16)*width + tampon_base_x+thx+8+region_x*16;
+                const float b = tampon[(thy+8+region_y*16)*48+thx+8+region_x*16];
+                if (postOp == POST_NONE){
+                    dst[pixel] = b;
+                } else {
+                    second[pixel] = src[pixel] - b;
+                    dst[pixel] = (postOp == POST_SUBTRACT_REMOVE_RANGE) ? RemoveRangeAroundZero_Device(b, w) : AmplifyRangeAroundZero_Device(b, w);
+                }
+            }
         }
     }
 }

@@ -89,13 +89,20 @@ enum BlurPostOp {
     BLUR_POST_NONE = 0,
     BLUR_POST_RESIDUAL = 1,         //second = mem_d - blur
     BLUR_POST_REMOVE_RANGES = 2,    //subarray_removerangearound0 (1.5) then removerangearound0 (0.04) on second
-    BLUR_POST_SEPARATE_HF_UHF = 3   //separateHf_Uhf of the blur and mem_d
+    BLUR_POST_SEPARATE_HF_UHF = 3,  //separateHf_Uhf of the blur and mem_d
+    //window 8 only (TiledGaussianBlur), with the weight w:
+    BLUR_POST_SUBTRACT_REMOVE_RANGE = 4,  //second = mem_d - blur, then dst = RemoveRangeAroundZero(blur, w)
+    BLUR_POST_SUBTRACT_AMPLIFY_RANGE = 5  //second = mem_d - blur, then dst = AmplifyRangeAroundZero(blur, w)
 };
 
-void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i, VkDeviceAddress second = 0, BlurPostOp postOp = BLUR_POST_NONE){
+void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i, VkDeviceAddress second = 0, BlurPostOp postOp = BLUR_POST_NONE, float w = 0.0f){
     const int gaussiansize = gaussianHandle.getWindow(i);
     VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
     VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
+
+    //each kernel does only its own passes after the blur
+    const bool tiledPostOp = (postOp == BLUR_POST_SUBTRACT_REMOVE_RANGE || postOp == BLUR_POST_SUBTRACT_AMPLIFY_RANGE);
+    if (postOp != BLUR_POST_NONE && tiledPostOp != (gaussiansize == 8)) throw VshipError(NotSupported, __FILE__, __LINE__, "this pass after the blur is not available for this window");
 
     VkPipeline pipeline;
     uint8_t kernelArguments[128];
@@ -104,7 +111,7 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
         //TiledGaussianBlur, 32x32 outputs per workgroup. The fused separableBlur kernel cannot replace it: its
         //compiled code mixes fused and separate multiply-adds, and each compiler mixes them its own way.
         pipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:TiledGaussianBlur"];
-        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral);
+        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, second, (int)postOp, w);
         bl_x = ((width-1)/32+1)*((height-1)/32+1);
         bl_y = 1;
     } else {
