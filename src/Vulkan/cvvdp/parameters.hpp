@@ -25,6 +25,14 @@ constexpr float beta_tf[4] = {
     0.1898
 };
 //constexpr bool xchannel_masking = true;
+constexpr float ch_chrom_w = 1.;
+constexpr float ch_trans_w = 0.8081134557723999;
+constexpr float baseband_weight[4] = {
+    0.0036334486212581396,
+    1.6627724170684814,
+    4.11874532699585,
+    25.25969886779785
+};
 constexpr float image_int = 0.577918291091919;
 constexpr float bfilt_duration = 0.4;
 

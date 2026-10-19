@@ -21,6 +21,18 @@
 
 namespace cvvdp{
 
+//pycvvdp's safe_pow: (x + 1e-5)^p - 1e-5^p. pycvvdp pools with it at every step because its exponents are tensors.
+double safe_pow(double x, double p){
+    const double epsilon = 0.00001;
+    return std::pow(x + epsilon, p) - std::pow(epsilon, p);
+}
+
+//pycvvdp's per-channel weight: sustained, RG, YV, transient, times the baseband's weight for the last band
+float channelWeight(int channel, bool baseband){
+    const float weight = (channel == 3) ? ch_trans_w : ((channel == 0) ? 1.f : ch_chrom_w);
+    return baseband ? weight*baseband_weight[channel] : weight;
+}
+
 VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model){
     const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
 
@@ -75,8 +87,9 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
             //baseband
             //here Lbkg is different, it is the mean.
             //now we need to take the mean.
-            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[4][band], w*h, true);
-            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace2[0][band], memPlace2[4][band], w*h, true);
+            //pycvvdp clamps the pixels at 0.01 before taking their mean
+            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[4][band], w*h, true, 1.f, false, true);
+            placeComputeMean<1>(deviceHelper, cmdBuff, memPlace2[0][band], memPlace2[4][band], w*h, true, 1.f, false, true);
             for (int channel = 0; channel < 4; channel++){
                 placeBaseBandPyrRefine<true, 1>(deviceHelper, cmdBuff, memPlace1[channel+5][band], memPlace1[channel][band], memPlace1[4][band], w*h);
                 placeBaseBandPyrRefine<true, 1>(deviceHelper, cmdBuff, memPlace2[channel+5][band], memPlace2[channel][band], memPlace2[4][band], w*h);
@@ -94,7 +107,10 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     for (int band = 0; band < levels; band++){
         for (int channel = 0; channel < 4; channel++){
             const int64_t size = w*h;
-            placeComputeMean<2>(deviceHelper, cmdBuff, memPlace1[channel][band], temp+sizeof(float)*tempOffset, size, true);
+            //computeD leaves its channel's weight on the differences and computeD_baseband the baseband's (for the
+            //distmap); pycvvdp pools them without and with safe_pow, then applies all the weights (cpuPostTreatment)
+            const float appliedWeight = (band == levels-1) ? baseband_weight[channel] : channelWeight(channel, false);
+            placeComputeMean<2>(deviceHelper, cmdBuff, memPlace1[channel][band], temp+sizeof(float)*tempOffset, size, true, 1.f/appliedWeight, true);
             tempOffset++; //we stored the norm at temp[tempOffset]
         }
         w = (w+1)/2;
@@ -114,18 +130,18 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     return memPlace1[0][0];
 }
 
-float cpuPostTreatment(float* scores, uint levels){
-    //we have our levels*4 scores
-    double finalValue = 0;
-    for (int band = 0; band < levels; band++){
-        for (int channel = 0; channel < 4; channel++){
-            const float val = scores[band*4+channel];
-            finalValue += std::pow(val, 4);
+//pycvvdp's do_pooling_and_jods for one frame: weights the levels*4 pooled differences, sums the bands of each
+//channel with a safe_pow 4-norm, then the channels the same way
+double cpuPostTreatment(float* scores, uint levels){
+    double total = 0;
+    for (int channel = 0; channel < 4; channel++){
+        double bands = 0;
+        for (int band = 0; band < levels; band++){
+            bands += safe_pow(scores[band*4+channel]*channelWeight(channel, band == levels-1), beta_sch);
         }
+        total += safe_pow(safe_pow(bands, 1./beta_sch), beta_tch);
     }
-    finalValue = std::pow(finalValue, 1./4.);
-
-    return finalValue;
+    return safe_pow(total, 1./beta_tch);
 }
 
 //currently at 32 planes + 3*fps/2 planes consumed
@@ -428,13 +444,13 @@ public:
         }
         
         const double current_score = cpuPostTreatment(outputScoresCPU, levels);
-        score_squareSum += std::pow(current_score, beta_t);
+        score_squareSum += safe_pow(current_score, beta_t);
         double resQ;
         numFrame++;
         if (numFrame == 1){
             resQ = current_score * image_int;
         } else {
-            resQ = std::pow(score_squareSum/(double)numFrame, 1./beta_t);
+            resQ = safe_pow(score_squareSum/(double)numFrame, 1./beta_t);
         }
         return toJOD(resQ);
     }
