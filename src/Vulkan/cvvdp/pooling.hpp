@@ -39,8 +39,118 @@ void placeComputeMean(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, 
     if (oscillator == 2){
         placeReduceSum<power, true, true>(deviceHelper, cmdBuff, final_dst, tempbuffer[oscillator], size, divide, scale, safePow, clampMin); 
     } else {
-        placeReduceSum<power, false, true>(deviceHelper, cmdBuff, final_dst, tempbuffer[oscillator], size, false, scale, safePow, clampMin); 
+        placeReduceSum<power, false, true>(deviceHelper, cmdBuff, final_dst, tempbuffer[oscillator], size, false, scale, safePow, clampMin);
     }
 }
+
+//A mean of placeComputeMean's to compute in a batch: the result goes to dst instead of temp[0]
+struct MeanJob{
+    VkDeviceAddress src;
+    VkDeviceAddress dst;
+    int64_t size;
+    bool divide;
+    float scale;
+    bool safePow;
+    bool clampMin;
+};
+
+//One reduceSum dispatch of a mean, as reduceSums in shaders/pooling.slang reads it
+struct ReduceJob{
+    VkDeviceAddress dst;
+    VkDeviceAddress src;
+    int64_t size;
+    uint32_t conditions;
+    float scale;
+};
+static_assert(sizeof(ReduceJob) == 32, "ReduceJob must match shaders/pooling.slang");
+
+//placeComputeMean for several means at once, with the same sums in the same order: the dispatches of all the
+//means are grouped by their rank, each group running as one reduceSums dispatch.
+template<int power>
+class BatchedMeans{
+    VshipDeviceHelper* deviceHelper = NULL;
+    VkDeviceAddress jobs_d = 0;
+    ReduceJob* jobsCPU = NULL;
+    std::vector<int64_t> passFirstJob; //the jobs of pass p are passFirstJob[p] .. passFirstJob[p+1]-1
+    std::vector<int64_t> passBlocks; //blocks of 1024 inputs of the largest job of each pass
+    VkDeviceAddress scratchBegin = 0;
+    VkDeviceAddress scratchEnd = 0;
+public:
+    //scratch receives the means' partial sums, 2*ceil(size/1024) floats per mean, and must not overlap dst or src
+    void init(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, const std::vector<MeanJob>& means, VkDeviceAddress scratch){
+        this->deviceHelper = deviceHelper;
+        scratchBegin = scratch;
+        //the dispatches of each mean, as placeComputeMean places them
+        std::vector<std::vector<ReduceJob>> passes;
+        for (const MeanJob& mean : means){
+            const uint32_t keep = (mean.clampMin ? 16 : 0)|(mean.safePow ? 8 : 0);
+            const uint32_t divide = mean.divide ? 1 : 0;
+            const int64_t partials = (mean.size+1023)/1024;
+            VkDeviceAddress buffers[3] = {scratch, scratch+sizeof(float)*partials, mean.src};
+            scratch += 2*sizeof(float)*partials;
+            int oscillator = 2; //the source of the next dispatch: the input, then the partial sums back and forth
+            int64_t size = mean.size;
+            size_t pass = 0;
+            while (true){
+                const bool first = (oscillator == 2);
+                const bool last = (size <= 1024);
+                const int destination = first ? 0 : (oscillator^1);
+                ReduceJob job;
+                job.dst = last ? mean.dst : buffers[destination];
+                job.src = buffers[oscillator];
+                job.size = size;
+                job.conditions = keep|(first ? 4|divide : 0)|(last ? 2 : 0);
+                job.scale = mean.scale;
+                if (passes.size() <= pass) passes.resize(pass+1);
+                passes[pass].push_back(job);
+                if (last) break;
+                oscillator = destination;
+                size = (size+1023)/1024;
+                pass++;
+            }
+        }
+        scratchEnd = scratch;
+
+        int64_t jobCount = 0;
+        for (const auto& pass : passes) jobCount += pass.size();
+        jobs_d = deviceHelper->device.mallocDevice(sizeof(ReduceJob)*jobCount);
+        jobsCPU = (ReduceJob*)deviceHelper->device.mallocHost(sizeof(ReduceJob)*jobCount);
+        if (jobs_d == 0 || jobsCPU == NULL){
+            throw VshipError(OutOfVRAM, __FILE__, __LINE__);
+        }
+        int64_t index = 0;
+        for (const auto& pass : passes){
+            passFirstJob.push_back(index);
+            int64_t blocks = 0;
+            for (const ReduceJob& job : pass){
+                jobsCPU[index++] = job;
+                blocks = std::max(blocks, (job.size+1023)/1024);
+            }
+            passBlocks.push_back(blocks);
+        }
+        passFirstJob.push_back(index);
+        deviceHelper->device.memCpyHtoD(cmdBuff, jobs_d, jobsCPU, sizeof(ReduceJob)*jobCount);
+        deviceHelper->device.placeMemoryBarriers(cmdBuff, {{jobs_d, sizeof(ReduceJob)*jobCount, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}});
+    }
+    //dst holds the extent of all the means' results, for the barrier after them
+    void place(VkCommandBuffer cmdBuff, VkDeviceAddress dst, size_t dstSize){
+        constexpr int blocksPerWorkgroup = 8; //TEAMS in shaders/pooling.slang
+        VkPipeline pipeline = deviceHelper->cachedPipeline["poolingCVVDP.spv:reduceSums"];
+        uint8_t kernelArguments[128];
+        for (size_t pass = 0; pass+1 < passFirstJob.size(); pass++){
+            const int64_t jobs = passFirstJob[pass+1]-passFirstJob[pass];
+            fillKernelArguments(0, kernelArguments, jobs_d+sizeof(ReduceJob)*passFirstJob[pass], power);
+            deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (passBlocks[pass]+blocksPerWorkgroup-1)/blocksPerWorkgroup, jobs, 1);
+            deviceHelper->device.placeMemoryBarriers(cmdBuff, {
+                {scratchBegin, scratchEnd-scratchBegin, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+                {dst, dstSize, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
+            });
+        }
+    }
+    void destroy(){
+        if (jobs_d != 0) deviceHelper->device.freeDevice(jobs_d);
+        if (jobsCPU != NULL) deviceHelper->device.freeHost(jobsCPU);
+    }
+};
 
 }

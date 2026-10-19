@@ -55,7 +55,39 @@ void placeCVVDPDistmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff,
     //result is in res[0], we can now discard other planes
 }
 
-VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, DisplayModel* model){
+//The final stage's pooling: the norm of the differences of each band and channel, into band*4 + channel of the
+//band 0 of plane 4 (free at that point), followed by their partial sums
+std::vector<MeanJob> finalPoolingMeans(VkDeviceAddress mem_d, int64_t resize_width, int64_t resize_height, DisplayModel* model, VkDeviceAddress& scratch){
+    const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
+    const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
+    const std::vector<int64_t> bandOffsets = pyramidBandOffsets(resize_width, resize_height, levels);
+    const VkDeviceAddress temp = mem_d+sizeof(float)*4*pyramidSize;
+    std::vector<MeanJob> means;
+    int64_t w = resize_width;
+    int64_t h = resize_height;
+    for (int band = 0; band < levels; band++){
+        for (int channel = 0; channel < 4; channel++){
+            //computeD leaves its channel's weight on the differences and computeD_baseband the baseband's (for the
+            //distmap); pycvvdp pools them without and with safe_pow, then applies all the weights (cpuPostTreatment)
+            const float appliedWeight = (band == levels-1) ? baseband_weight[channel] : channelWeight(channel, false);
+            MeanJob mean;
+            mean.src = mem_d+sizeof(float)*channel*pyramidSize+bandOffsets[band];
+            mean.dst = temp+sizeof(float)*means.size();
+            mean.size = w*h;
+            mean.divide = true;
+            mean.scale = 1.f/appliedWeight;
+            mean.safePow = true;
+            mean.clampMin = false;
+            means.push_back(mean);
+        }
+        w = (w+1)/2;
+        h = (h+1)/2;
+    }
+    scratch = temp+sizeof(float)*means.size();
+    return means;
+}
+
+VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* outputScoresCPU, bool outputDistmap, VkDeviceAddress mem_d, int64_t source_width, int64_t source_height, int64_t resize_width, int64_t resize_height, CSF_Handler& csfhandle, GaussianHandle& gaussianhandle, BatchedMeans<2>& pooling, DisplayModel* model){
     const int64_t pyramidSize = LpyrMemoryNeedPerPlane(resize_width, resize_height, model->get_screen_ppd());
 
     const int levels = get_frequencies(resize_width, resize_height, model->get_screen_ppd()).size();
@@ -116,22 +148,9 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
         h = (h+1)/2;
     }
 
-    w = resize_width;
-    h = resize_height;
-    int tempOffset = 0;
-    VkDeviceAddress temp = memPlace1[4][0]; //we take all the space! so we use band0
-    for (int band = 0; band < levels; band++){
-        for (int channel = 0; channel < 4; channel++){
-            const int64_t size = w*h;
-            //computeD leaves its channel's weight on the differences and computeD_baseband the baseband's (for the
-            //distmap); pycvvdp pools them without and with safe_pow, then applies all the weights (cpuPostTreatment)
-            const float appliedWeight = (band == levels-1) ? baseband_weight[channel] : channelWeight(channel, false);
-            placeComputeMean<2>(deviceHelper, cmdBuff, memPlace1[channel][band], temp+sizeof(float)*tempOffset, size, true, 1.f/appliedWeight, true);
-            tempOffset++; //we stored the norm at temp[tempOffset]
-        }
-        w = (w+1)/2;
-        h = (h+1)/2;
-    }
+    //the norm of each band and channel (finalPoolingMeans) into temp[band*4 + channel]
+    VkDeviceAddress temp = memPlace1[4][0];
+    pooling.place(cmdBuff, temp, sizeof(float)*levels*4);
 
     deviceHelper->device.memCpyDtoH(cmdBuff, outputScoresCPU, temp, sizeof(float)*levels*4);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {{temp, sizeof(float)*levels*4, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}});
@@ -168,6 +187,7 @@ class CVVDPComputingImplementation{
     TemporalRing temporalRing2; //encoded
     CSF_Handler csf_handler;
     GaussianHandle gaussianhandle;
+    BatchedMeans<2> pooling;
     VshipColorConvert::Converter converter1;
     VshipColorConvert::Converter converter2;
     Vship_Colorspace_t ref_colorspace;
@@ -271,6 +291,9 @@ public:
         temporalRing2.init(deviceHelper, cmdBuffs[0], fps, minwidth, minheight);
         csf_handler.init(deviceHelper, cmdBuffs[0], resize_width, resize_height, model->get_screen_ppd());
         gaussianhandle.init(deviceHelper, cmdBuffs[0]);
+        VkDeviceAddress poolingScratch;
+        const std::vector<MeanJob> poolingMeans = finalPoolingMeans(mem_d, resize_width, resize_height, model, poolingScratch);
+        pooling.init(deviceHelper, cmdBuffs[0], poolingMeans, poolingScratch);
         endCmdBuffer(cmdBuffs[0]);
         //execute
         deviceHelper->device.executeBuffer(cmdBuffs[0], fence);
@@ -280,7 +303,7 @@ public:
         beginCmdBuffer(cmdBuffs[2]);
         //preprocess phase goes up to having temporally filtered planes filled up; the distortion map is only
         //computed for the frames that ask for it (run)
-        distmapAddress = placeCVVDPFinalStage(deviceHelper, cmdBuffs[2], outputScoresCPU, false, mem_d, source_width, source_height, resize_width, resize_height, csf_handler, gaussianhandle, model);
+        distmapAddress = placeCVVDPFinalStage(deviceHelper, cmdBuffs[2], outputScoresCPU, false, mem_d, source_width, source_height, resize_width, resize_height, csf_handler, gaussianhandle, pooling, model);
         endCmdBuffer(cmdBuffs[2]);
 
         fence->synchronize();
@@ -294,6 +317,7 @@ public:
         temporalRing2.destroy();
         csf_handler.destroy();
         gaussianhandle.destroy();
+        pooling.destroy();
         converter1.destroy();
         converter2.destroy();
         delete model;
