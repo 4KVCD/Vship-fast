@@ -56,12 +56,11 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"scoreSSIMU2.spv", {"blurRows", "blurColumnsAndScore"}},
     //Butter
     {"gaussianBlurButter.spv", {"TiledGaussianBlur"}},
-    {"separableBlur3Butter.spv", {"separableBlur3"}},
+    {"separableBlur3Butter.spv", {"separableBlur3", "opsinDynamicsBlur"}},
     {"separableBlur4Butter.spv", {"separableBlur4"}},
     {"separableBlur18Butter.spv", {"separableBlur18"}},
     {"downupsampleButter.spv", {"downsample", "addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
-    {"colorsButter.spv", {"opsinDynamicsImage"}},
     {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff", "L2diffs"}},
     {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit"}},
     {"combineMasksButter.spv", {"computeDiffmap"}},

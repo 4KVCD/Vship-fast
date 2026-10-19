@@ -14,9 +14,14 @@
 // - Each sum starts from the argument zero, which is 0: a literal 0 lets the compiler turn the first fma into a
 //   multiplication, whose result differs from fma(a, k, +0) when a*k is -0.
 //
+// For window 3, opsinDynamicsBlur blurs the 3 planes of an image the same way and computes the opsin dynamics from
+// them (opsinModule.slang), each blurred value through opaque() as it came from memory before.
+//
 // When hasResidual is not 0, the kernel also writes src - dst to residual, as the subArray pass that followed the
 // blur did: the blurred value goes through opaque() first, so that the subtraction is not fused with the division's
 // multiplication.
+
+import opsinModule;
 
 #define CONCAT2(a, b) a##b
 #define CONCAT(a, b) CONCAT2(a, b)
@@ -51,23 +56,19 @@ float opaque(float x, uint zero){
 // The weight of the window of pixel n of a line of the given length: the sum of the kernel over the taps inside the
 // line, as the integral gives it.
 float windowWeight(float* integral, int n, int length){
+    // a pixel past the end only feeds outputs outside the image; clamped so that its weight reads inside the integral
+    n = min(n, length - 1);
     const int begin = max(n - G, 0);
     const int end = min(n + G, length - 1);
     return integral[G+end+1-n] - integral[G+begin-n];
 }
 
-[shader("compute")]
-[numthreads(THREADS, 1, 1)]
-void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* residual, uniform int hasResidual){
+// The blur of the tile at (x0, y0) of src: thread tid's COLUMN_RUN outputs, of column x0 + tid % TILE_X and rows
+// y0 + COLUMN_RUN*(tid / TILE_X) and the COLUMN_RUN-1 after (0 outside the image). Every thread of the workgroup calls
+// it, and may call it again for another plane.
+void blurTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid, float k[TAPS], float* gaussiankernel_integral, float zero, bool afterAnotherTile, out float blurred[COLUMN_RUN]){
     const int w = (int)width;
     const int h = (int)height;
-    const int tid = (int)threadIdx.x;
-    const int x0 = (int)blockIdx.x*TILE_X;
-    const int y0 = (int)blockIdx.y*TILE_Y;
-
-    float k[TAPS];
-    [ForceUnroll]
-    for (int j = 0; j < TAPS; j++) k[j] = gaussiankernel[j];
 
     // the input tile: rows y0-G .. y0+TILE_Y+G-1 and columns x0-G .. x0+TILE_X+G-1, 0 outside the image. The loads
     // are all issued before the first store, so that their waits overlap.
@@ -81,6 +82,8 @@ void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
         const int x = x0 - G + c;
         loaded[m] = (i < ROWS*(TILE_X + 2*G) && x >= 0 && x < w && y >= 0 && y < h) ? src[(int64_t)y*width + x] : 0.0f;
     }
+    // a former call's column pass may still read the tile
+    if (afterAnotherTile) GroupMemoryBarrierWithGroupSync();
     [ForceUnroll]
     for (int m = 0; m < TILE_LOADS; m++){
         const int i = tid + m*THREADS;
@@ -122,24 +125,78 @@ void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
     }
     GroupMemoryBarrierWithGroupSync();
 
-    // column pass: thread tid takes column tid % TILE_X, rows COLUMN_RUN*(tid / TILE_X) and the COLUMN_RUN-1 after
+    // column pass
     const int c = tid % TILE_X;
     const int rr0 = (tid/TILE_X)*COLUMN_RUN;
-    const int x = x0 + c;
-    if (x >= w) return;
     float column[COLUMN_RUN + 2*G];
     [ForceUnroll]
     for (int i = 0; i < COLUMN_RUN + 2*G; i++) column[i] = tile[(rr0 + i)*ROW_PITCH + c];
     [ForceUnroll]
     for (int n = 0; n < COLUMN_RUN; n++){
         const int y = y0 + rr0 + n;
-        if (y >= h) return;
         float out = zero;
         [ForceUnroll]
         for (int j = 0; j < TAPS; j++) out = fma(column[n+j], k[j], out);
-        const int64_t pixel = (int64_t)y*width + x;
-        const float blurred = out/windowWeight(gaussiankernel_integral, y, h);
-        dst[pixel] = blurred;
-        if (hasResidual != 0) residual[pixel] = src[pixel] - opaque(blurred, asuint(zero));
+        blurred[n] = (x0 + c < w && y < h) ? out/windowWeight(gaussiankernel_integral, y, h) : 0.0f;
     }
 }
+
+[shader("compute")]
+[numthreads(THREADS, 1, 1)]
+void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* residual, uniform int hasResidual){
+    const int tid = (int)threadIdx.x;
+    const int x0 = (int)blockIdx.x*TILE_X;
+    const int y0 = (int)blockIdx.y*TILE_Y;
+    float k[TAPS];
+    [ForceUnroll]
+    for (int j = 0; j < TAPS; j++) k[j] = gaussiankernel[j];
+
+    float blurred[COLUMN_RUN];
+    blurTile(src, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, false, blurred);
+
+    const int x = x0 + tid % TILE_X;
+    if (x >= (int)width) return;
+    [ForceUnroll]
+    for (int n = 0; n < COLUMN_RUN; n++){
+        const int y = y0 + (tid/TILE_X)*COLUMN_RUN + n;
+        if (y >= (int)height) return;
+        const int64_t pixel = (int64_t)y*width + x;
+        dst[pixel] = blurred[n];
+        if (hasResidual != 0) residual[pixel] = src[pixel] - opaque(blurred[n], asuint(zero));
+    }
+}
+
+#if WINDOW == 3
+// Butteraugli's opsin dynamics of an image (src1, src2, src3: linear RGB) into dst1, dst2, dst3: the 3 planes are
+// blurred (window 3) and combined with the image in one pass. dst must not be src, as other workgroups still read
+// src's tile borders.
+[shader("compute")]
+[numthreads(THREADS, 1, 1)]
+void opsinDynamicsBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* dst1, uniform float* dst2, uniform float* dst3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float intensity_multiplier){
+    const int tid = (int)threadIdx.x;
+    const int x0 = (int)blockIdx.x*TILE_X;
+    const int y0 = (int)blockIdx.y*TILE_Y;
+    float k[TAPS];
+    [ForceUnroll]
+    for (int j = 0; j < TAPS; j++) k[j] = gaussiankernel[j];
+
+    float blurred1[COLUMN_RUN], blurred2[COLUMN_RUN], blurred3[COLUMN_RUN];
+    blurTile(src1, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, false, blurred1);
+    blurTile(src2, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred2);
+    blurTile(src3, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred3);
+
+    const int x = x0 + tid % TILE_X;
+    if (x >= (int)width) return;
+    const uint z = asuint(zero);
+    [ForceUnroll]
+    for (int n = 0; n < COLUMN_RUN; n++){
+        const int y = y0 + (tid/TILE_X)*COLUMN_RUN + n;
+        if (y >= (int)height) return;
+        const int64_t pixel = (int64_t)y*width + x;
+        const float3 xyb = opsinDynamics(float3(src1[pixel], src2[pixel], src3[pixel]), float3(opaque(blurred1[n], z), opaque(blurred2[n], z), opaque(blurred3[n], z)), intensity_multiplier);
+        dst1[pixel] = xyb.x;
+        dst2[pixel] = xyb.y;
+        dst3[pixel] = xyb.z;
+    }
+}
+#endif

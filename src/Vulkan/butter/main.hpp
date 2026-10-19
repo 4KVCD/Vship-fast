@@ -38,12 +38,13 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
     VkDeviceAddress hf2[3] = {mem_d+sizeof(float)*19*width*height, mem_d+sizeof(float)*20*width*height};
     VkDeviceAddress uhf2[3] = {mem_d+sizeof(float)*21*width*height, mem_d+sizeof(float)*22*width*height};
 
-    //to XYB
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, temp, lf1, width, height, gaussianHandle, intensity_multiplier);
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, temp, lf2, width, height, gaussianHandle, intensity_multiplier);
+    //to XYB, into mf1 and mf2: the opsin dynamics kernel cannot write over its source, and the medium frequencies are
+    //written channel by channel, each after the separation has read that channel of the XYB image
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, mf1, width, height, gaussianHandle, intensity_multiplier);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, mf2, width, height, gaussianHandle, intensity_multiplier);
 
-    placeSeparateFrequencies(deviceHelper, cmdBuff, src1_d, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
-    placeSeparateFrequencies(deviceHelper, cmdBuff, src2_d, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);
+    placeSeparateFrequencies(deviceHelper, cmdBuff, mf1, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
+    placeSeparateFrequencies(deviceHelper, cmdBuff, mf2, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);
 
     //no more needs for src1_d and src2_d so we reuse them as masks for butter
     VkDeviceAddress block_diff_dc[3] = {src1_d[0], src1_d[1], src1_d[2]};
