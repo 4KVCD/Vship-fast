@@ -40,7 +40,10 @@ float cubeRootAndAdd(float x, float add){
 }
 
 float3 linear_rgb_to_xyb(float3 a){
-    const float negBiasCbrt = -0.15595420188071790836f; // -cbrt(bias)
+    // -cbrtf(bias) as libjxl computes it at run time (ComputePremulAbsorb). The Windows C runtime's cbrtf, which the
+    // libjxl tools we compare with use, returns 0x1.3f64ecp-3, one ulp above the correctly rounded cube root, and
+    // SSIMULACRA2's coarse scales are sensitive enough to that ulp to move scores by thousandths.
+    const float negBiasCbrt = -0.155954212f;
     a = max(opsin_absorbance(a), 0.0f);
     a.x = cubeRootAndAdd(a.x, negBiasCbrt);
     a.y = cubeRootAndAdd(a.y, negBiasCbrt);
