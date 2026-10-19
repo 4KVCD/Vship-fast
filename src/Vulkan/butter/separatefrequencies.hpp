@@ -85,17 +85,16 @@ void placeXybLowFreqToVals(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdB
 void placeSeparateFrequencies(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src[3], VkDeviceAddress temp[3], VkDeviceAddress lf[3], VkDeviceAddress mf[3], VkDeviceAddress hf[2], VkDeviceAddress uhf[2], uint64_t width, uint64_t height, GaussianHandle& gaussianHandle){
     for (int i = 0; i < 3; i++){
         //we separate lf to get mf BUT we put mf on hf if i != 2 for later reasons
-        placeBlur(deviceHelper, cmdBuff, lf[i], src[i], temp[i], width, height, gaussianHandle, 4);
+        //the blur also writes xyb-lf, to temp[0] for i == 2, else to uhf[i]
+        placeBlur(deviceHelper, cmdBuff, lf[i], src[i], temp[i], width, height, gaussianHandle, 4, (i == 2) ? temp[0] : uhf[i]);
 
         if (i == 2){
             //mf = blur(xyb-lf)
-            placeSubArray(deviceHelper, cmdBuff, src[i], lf[i], temp[0], width*height);
             placeBlur(deviceHelper, cmdBuff, mf[i], temp[0], temp[1], width, height, gaussianHandle, 3);
             break;
         }
         //mf (hf (uhf)) = xyb-lf //mf is stored on hf which is stored in uhf
-        //same thing here, we will put the real hf into uhf to avoid later copy
-        placeSubArray(deviceHelper, cmdBuff, src[i], lf[i], uhf[i], width*height);
+        //same thing here, we will put the real hf into uhf to avoid later copy (the blur above wrote it)
         //mf = blur(mf (hf (uhf))) //we blur mf BUT mf is on hf which is on uhf. After this, mf is stored in mf but hf is on uhf
         //the real mf is blurred and we avoid the need to copy the unblurred mf to hf (uhf)
         placeBlur(deviceHelper, cmdBuff, mf[i], uhf[i], temp[i], width, height, gaussianHandle, 3);

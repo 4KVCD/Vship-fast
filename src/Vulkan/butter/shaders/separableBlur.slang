@@ -13,6 +13,10 @@
 //   first tap to the end of some sums), which a loop with a run-time bound, like the former passes', prevents.
 // - Each sum starts from the argument zero, which is 0: a literal 0 lets the compiler turn the first fma into a
 //   multiplication, whose result differs from fma(a, k, +0) when a*k is -0.
+//
+// When hasResidual is not 0, the kernel also writes src - dst to residual, as the subArray pass that followed the
+// blur did: the blurred value goes through opaque() first, so that the subtraction is not fused with the division's
+// multiplication.
 
 #define CONCAT2(a, b) a##b
 #define CONCAT(a, b) CONCAT2(a, b)
@@ -39,6 +43,11 @@ static const int COLUMN_RUN = TILE_Y*TILE_X/THREADS;
 // smaller.
 groupshared float tile[ROWS*IN_PITCH];
 
+// x unchanged, through an operation the compiler cannot see through (zero is 0)
+float opaque(float x, uint zero){
+    return asfloat(asuint(x) | zero);
+}
+
 // The weight of the window of pixel n of a line of the given length: the sum of the kernel over the taps inside the
 // line, as the integral gives it.
 float windowWeight(float* integral, int n, int length){
@@ -49,7 +58,7 @@ float windowWeight(float* integral, int n, int length){
 
 [shader("compute")]
 [numthreads(THREADS, 1, 1)]
-void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero){
+void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* residual, uniform int hasResidual){
     const int w = (int)width;
     const int h = (int)height;
     const int tid = (int)threadIdx.x;
@@ -128,6 +137,9 @@ void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
         float out = zero;
         [ForceUnroll]
         for (int j = 0; j < TAPS; j++) out = fma(column[n+j], k[j], out);
-        dst[(int64_t)y*width + x] = out/windowWeight(gaussiankernel_integral, y, h);
+        const int64_t pixel = (int64_t)y*width + x;
+        const float blurred = out/windowWeight(gaussiankernel_integral, y, h);
+        dst[pixel] = blurred;
+        if (hasResidual != 0) residual[pixel] = src[pixel] - opaque(blurred, asuint(zero));
     }
 }
