@@ -241,8 +241,7 @@ shaderBuild: .FORCE
 	slangc src/Vulkan/butter/shaders/separableBlur.slang -DRADIUS=6 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry separableBlur6 -o libvshipSpvShaders/separableBlur6Butter.spv
 	slangc src/Vulkan/butter/shaders/separableBlur.slang -DRADIUS=7 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry separableBlur7 -o libvshipSpvShaders/separableBlur7Butter.spv
 	slangc src/Vulkan/butter/shaders/separableBlur.slang -DRADIUS=16 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry separableBlur16 -o libvshipSpvShaders/separableBlur16Butter.spv
-	slangc src/Vulkan/butter/shaders/downupsample.slang -DFP64=0 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry addsupersample2X -o libvshipSpvShaders/downupsampleButter.spv
-	slangc src/Vulkan/butter/shaders/downupsample.slang -DFP64=1 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry addsupersample2X -o libvshipSpvShaders/downupsampleFp64Butter.spv
+	slangc src/Vulkan/butter/shaders/downupsample.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry addsupersample2X -o libvshipSpvShaders/downupsampleButter.spv
 	slangc src/Vulkan/butter/shaders/combineMasks.slang -DFP64=0 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry computeDiffmap -o libvshipSpvShaders/combineMasksButter.spv
 	slangc src/Vulkan/butter/shaders/combineMasks.slang -DFP64=1 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry computeDiffmap -o libvshipSpvShaders/combineMasksFp64Butter.spv
 	slangc src/Vulkan/butter/shaders/maltaDiff.slang -DFP64=0 -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry MaltaDiffMapLF -entry MaltaDiffMap -o libvshipSpvShaders/maltaDiffButter.spv

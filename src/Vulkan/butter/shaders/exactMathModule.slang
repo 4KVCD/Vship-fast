@@ -112,6 +112,71 @@ public int signDecided(FF v, float errorBound, out bool certain){
     return (v.hi > 0.0f) ? 1 : ((v.hi < 0.0f) ? -1 : 0);
 }
 
+// x/2^shift rounded to the nearest integer, ties to even (shift at least 1; 0 for a shift of 64 or more, right for
+// x below 2^63)
+uint64_t roundShiftEven(uint64_t x, int shift){
+    if (shift >= 64) return 0;
+    const uint64_t q = x >> shift;
+    const uint64_t rem = x & ((uint64_t(1) << shift) - 1);
+    const uint64_t half = uint64_t(1) << (shift - 1);
+    return (rem > half || (rem == half && (q & 1) != 0)) ? q + 1 : q;
+}
+
+// float(double(value)*m), m a normal double given by its bits: the product rounded to double, then to float, as the
+// CPU rounds them, computed exactly with integers, so on any GPU and without 64-bit floats. A double-float product
+// with a margin test (decided()) cannot settle many of them for a constant m like libjxl's 0.85, about 17/20: 6% of
+// the products are within its 2^-40 margin of a float rounding tie. Checked against the CPU's double arithmetic for
+// all 2^32 floats.
+public float mulDoubleRounded(float value, uint64_t mBits){
+    const uint vb = asuint(value);
+    const uint mHigh = uint(mBits >> 32);
+    const uint sign = (vb ^ mHigh) & 0x80000000u;
+    const uint field = (vb >> 23) & 0xffu;
+    if (field == 0xffu) return asfloat(vb ^ (mHigh & 0x80000000u)); // infinity times m, or NaN
+
+    // value = mv*2^(ev - 23), mv of 24 bits
+    uint mv = vb & 0x7fffffu;
+    int ev;
+    if (field == 0u){
+        if (mv == 0u) return asfloat(sign);
+        const int shift = 23 - int(firstbithigh(mv));
+        mv <<= shift;
+        ev = -126 - shift;
+    } else {
+        mv |= 0x800000u;
+        ev = int(field) - 127;
+    }
+    // m = mm*2^(em - 52), mm of 53 bits
+    const uint64_t mm = (mBits & ((uint64_t(1) << 52) - 1)) | (uint64_t(1) << 52);
+    const int em = int((mBits >> 52) & 0x7ffu) - 1023;
+
+    // the exact product mv*mm, 76 or 77 bits: t*2^29 + low
+    const uint64_t a = uint64_t(mv)*(mm >> 29);
+    const uint64_t b = uint64_t(mv)*(mm & ((uint64_t(1) << 29) - 1));
+    const uint64_t t = a + (b >> 29);
+    const uint64_t low = b & ((uint64_t(1) << 29) - 1);
+
+    // rounded to double: q*2^s1, q of 53 bits (2^53 after a carry)
+    const int drop1 = ((t >> 47) != 0) ? 24 : 23;
+    uint64_t q = (t << (29 - drop1)) | (low >> drop1);
+    const uint64_t rem = low & ((uint64_t(1) << drop1) - 1);
+    const uint64_t half = uint64_t(1) << (drop1 - 1);
+    if (rem > half || (rem == half && (q & 1) != 0)) q++;
+    const int s1 = drop1 + ev + em - 75;
+    const int lengthQ = ((q >> 53) != 0) ? 54 : 53;
+    const int e = s1 + lengthQ - 1; // the exponent of the double product
+
+    // rounded to float: 24 bits, fewer below the normal range. A rounding up to 2^24 (or to 2^23 for a subnormal)
+    // carries into the exponent field, as IEEE's layout makes it, up to infinity.
+    const int drop2 = lengthQ - 24 + ((e < -126) ? -126 - e : 0);
+    const uint r = uint(roundShiftEven(q, drop2));
+    uint bits;
+    if (e < -126) bits = r;
+    else if (e + 127 >= 255) bits = 0x7f800000u;
+    else bits = (uint(e + 127) << 23) + r - 0x800000u;
+    return asfloat(sign | bits);
+}
+
 #if FP64
 // a/b correctly rounded, in double
 public double divide64(double a, double b){

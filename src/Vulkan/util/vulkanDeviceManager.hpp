@@ -61,7 +61,6 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"separableBlur7Butter.spv", {"separableBlur7"}},
     {"separableBlur16Butter.spv", {"separableBlur16"}},
     {"downupsampleButter.spv", {"addsupersample2X"}},
-    {"downupsampleFp64Butter.spv", {"addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
     {"maltaDiffFp64Butter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
     {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2diffs"}},

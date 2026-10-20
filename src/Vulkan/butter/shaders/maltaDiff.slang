@@ -333,6 +333,10 @@ float maltaDiff(float a, float b, float norm2_0gt1, float norm2_0lt1, float norm
 
     // secondary half-open quadratic objectives: which distance applies (mode) and whether d gains or loses it
     const float fabs0 = abs(a);
+    // a = b = 0, as in areas where both images are flat: too_small and too_big are 0 and b is neither below nor above
+    // them, so d is libjxl's result. The tests below cannot decide this case (their margins are 0), and sending it to
+    // the double computation makes whole waves take that path, which is slow on GPUs with slow doubles.
+    if (fabs0 == 0.0f && b == 0.0f) return d;
     const FF tooSmall = ffMulFloat(ff(0.550000011920929f, -1.1920929132713809e-08f), fabs0, zero);
     const FF tooBig = ffMulFloat(ff(1.0499999523162842f, 4.7683716530855236e-08f), fabs0, zero);
     const float conditionMargin = MARGIN*(tooBig.hi + abs(b));
