@@ -56,10 +56,28 @@ int main(int argc, char** argv) {
     cs.transferFunction = Vship_TRC_BT709; cs.primaries = Vship_PRIMARIES_BT709; cs.crop = {0, 0, 0, 0};
     if (pq) { cs.transferFunction = Vship_TRC_PQ; cs.primaries = Vship_PRIMARIES_BT2020; cs.YUVMatrix = Vship_MATRIX_BT2020_NCL; }
     if (model.empty()) model = w > 1920 ? "standard_4k" : "standard_fhd";
-    const int64_t lineSize[3] = {w, w / 2, w / 2};
+    // BENCH_PAD set: lines of w+64 and w/2+32 bytes, the frames copied in row by row, as a caller with padded lines
+    // passes them
+    const bool pad = getenv("BENCH_PAD") != nullptr;
+    const int64_t lineSize[3] = {w + (pad ? 64 : 0), w / 2 + (pad ? 32 : 0), w / 2 + (pad ? 32 : 0)};
+    const size_t storedBytes = lineSize[0] * h + 2 * lineSize[1] * (h / 2);
+    if (pad) {
+        for (std::vector<uint8_t>* v : {&ref, &dis}) {
+            std::vector<uint8_t> padded(storedBytes * frames, 0);
+            for (int fr = 0; fr < frames; fr++) {
+                const uint8_t* src = v->data() + frameBytes * fr;
+                uint8_t* dst = padded.data() + storedBytes * fr;
+                for (int64_t y = 0; y < h; y++) memcpy(dst + y * lineSize[0], src + y * w, w);
+                for (int c = 0; c < 2; c++)
+                    for (int64_t y = 0; y < h / 2; y++)
+                        memcpy(dst + lineSize[0] * h + c * lineSize[1] * (h / 2) + y * lineSize[1], src + w * h + c * (w / 2) * (h / 2) + y * (w / 2), w / 2);
+            }
+            v->swap(padded);
+        }
+    }
     auto planes = [&](std::vector<uint8_t>& v, int fr, const uint8_t* p[3]) {
-        const uint8_t* base = v.data() + frameBytes * fr;
-        p[0] = base; p[1] = base + w * h; p[2] = base + w * h + (w / 2) * (h / 2);
+        const uint8_t* base = v.data() + storedBytes * fr;
+        p[0] = base; p[1] = base + lineSize[0] * h; p[2] = p[1] + lineSize[1] * (h / 2);
     };
 
     check(Vship_SetDevice(0), "SetDevice");

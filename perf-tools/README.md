@@ -8,7 +8,9 @@ library's import library or shared object).
   exact hex floats (cvvdpbench also scores every frame with its distortion map requested and prints a hash of
   the map; butterbench prints a hash of its map), then time `repeats` passes over all frames with `threads`
   threads and print `... fps`. cvvdpbench also takes `-m <display model>`, `-z` (resize to the display) and
-  `-pq` (PQ BT.2020 input).
+  `-pq` (PQ BT.2020 input). With the environment variable `BENCH_PAD` set, the three tools pass the frames with
+  padded lines (w+64 bytes for luma, w/2+32 for chroma, copied in row by row), as a caller with padded lines does;
+  the scores must be the same as without it.
 - `formatsweep W H ref.yuv dist.yuv`: builds 2 frames of 27 input formats (8 to 16-bit and float, limited and
   full range, every chroma subsampling and location, odd sizes, the YUV matrices, the transfer functions, crop
   and resize) from the 8-bit clip and prints the 3 metrics' scores as exact hex floats, one line per format.
