@@ -630,6 +630,22 @@ public:
         vkDestroyPipeline(device, pipeline, nullptr);
 #endif
     }
+    //Destroys a buffer once no queue has work in flight. Another thread's handler may be computing: its command
+    //buffers never touch this buffer, but MoltenVK makes every buffer with a device address resident in every
+    //command buffer, and Metal fails a command buffer whose resources were freed under it ("Invalid Resource",
+    //device lost). Holding the queue locks keeps new work from being submitted meanwhile. So a handler being destroyed
+    //waits for the frames that other threads have in flight on the shared queue, and their next submissions wait for
+    //it. Buffers are only freed when a handler or a lazily grown buffer goes, never per frame, so the frame loop
+    //never waits here.
+    void destroyBuffer(VkBuffer buffer, VmaAllocation allocation){
+        std::lock_guard<std::mutex> computeGuard(queueLock);
+        std::unique_lock<std::mutex> uploadGuard(uploadQueueLock, std::defer_lock);
+        if (transferFamily.has_value()) uploadGuard.lock();
+        vkQueueWaitIdle(queue);
+        if (transferFamily.has_value()) vkQueueWaitIdle(uploadQueue);
+        vkDestroyBuffer(device, buffer, NULL);
+        vmaFreeMemory(vmaAllocator, allocation);
+    }
     void* mallocHost(size_t size){
         auto [address, allocation] = malloc(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_AUTO, 0, VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT);
         void* res;
@@ -651,8 +667,7 @@ public:
         auto [allocation, buffer] = allocatorPerAdress[address];
         allocatorPerAdress.erase(address);
         allocatorPerAddressLock.unlock();
-        vkDestroyBuffer(device, buffer, NULL);
-        vmaFreeMemory(vmaAllocator, allocation);
+        destroyBuffer(buffer, allocation);
     }
     //works even if ptr isnt the original. As long as ptr is in range of host allocated memory it's good
     bool isHostAllocated(const void* ptr){
@@ -694,8 +709,7 @@ public:
         allocatorPerAdress.erase(address);
         allocatorPerAddressLock.unlock();
         vmaUnmapMemory(vmaAllocator, allocation);
-        vkDestroyBuffer(device, buffer, NULL);
-        vmaFreeMemory(vmaAllocator, allocation);
+        destroyBuffer(buffer, allocation);
     }
     //will place the copy command in cmdbuff (be careful to have cmdbuff to a recording state)
     //no boundary check
