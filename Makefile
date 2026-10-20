@@ -233,7 +233,7 @@ shaderBuild: .FORCE
 	slangc src/Vulkan/gpuColorToLinear/shaders/resize.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry horizontalResizeTranspose -o libvshipSpvShaders/resize.spv
 	slangc src/Vulkan/gpuColorToLinear/shaders/primaries.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry primariesToPrimaries -o libvshipSpvShaders/primaries.spv
 	slangc src/Vulkan/gpuColorToLinear/shaders/YUVToLinRGB.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry YUVToLinRGB -entry YUVToLinRGBUpsampled -o libvshipSpvShaders/YUVToLinRGB.spv
-	slangc src/Vulkan/ssimu2/shaders/downsampleSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry downsample -o libvshipSpvShaders/downsampleSSIMU2.spv
+	slangc src/Vulkan/ssimu2/shaders/downsampleSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry downsample -entry yuvToPyramid8 -entry yuvToPyramid16 -o libvshipSpvShaders/downsampleSSIMU2.spv
 	slangc src/Vulkan/ssimu2/shaders/makeXYBSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry rgb_to_positive_xyb -o libvshipSpvShaders/makeXYBSSIMU2.spv
 	slangc src/Vulkan/ssimu2/shaders/scoreSSIMU2.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry blurRows -entry blurColumnsAndScore -o libvshipSpvShaders/scoreSSIMU2.spv
 	slangc src/Vulkan/butter/shaders/gaussianBlur.slang -O2 -target spirv -profile spirv_1_3 -emit-spirv-directly -fvk-use-entrypoint-name -entry TiledGaussianBlur -o libvshipSpvShaders/gaussianBlurButter.spv

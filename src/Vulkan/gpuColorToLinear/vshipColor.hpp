@@ -219,7 +219,26 @@ public:
         Vship_YUVMatrix_t matrix;
         Vship_TransferFunction_t transfer;
         bool libjxlArithmetic;
+        //then, when toPrimaries, primariesToPrimaries from primariesSource to primariesDestination, as placeConvert
+        //does for the converter's destination
+        bool toPrimaries;
+        Vship_Primaries_t primariesSource;
+        Vship_Primaries_t primariesDestination;
     };
+    //The primaries placeConvert converts the linear RGB to for the destination; false when it keeps the source's.
+    bool destinationPrimaries(Vship_Primaries_t& primaries){
+        switch(destination){
+            case XYZ:
+                primaries = Vship_PRIMARIES_INTERNAL;
+                break;
+            case linRGBBT709:
+                primaries = Vship_PRIMARIES_BT709;
+                break;
+            case linRGB:
+                return false;
+        }
+        return source_colorspace.primaries != primaries;
+    }
     //Prepares the chroma (its horizontal upsampling into temp) for a kernel that converts each pixel to linear RGB as
     //YUVToLinRGBUpsampled does, and fills conversion. Returns false, placing nothing, when the input is linear RGB
     //already (nothing to convert) or its chroma layout is not one YUVToLinRGBUpsampled covers.
@@ -238,12 +257,14 @@ public:
         conversion.matrix = source_colorspace.YUVMatrix;
         conversion.transfer = source_colorspace.transferFunction;
         conversion.libjxlArithmetic = libjxlArithmetic;
+        conversion.primariesSource = source_colorspace.primaries;
+        conversion.toPrimaries = destinationPrimaries(conversion.primariesDestination);
         return true;
     }
-    //Whether the converter's output is the linear RGB of the input as is, without primaries conversion, crop or
-    //resize, so that a kernel can take over from placeChromaForPixelConversion
+    //Whether the converter's output is the conversion of each input pixel, without crop or resize, so that a kernel
+    //can take over from placeChromaForPixelConversion
     bool outputIsPixelConversion(){
-        return destination == linRGB && !isResized && !isCropped;
+        return !isResized && !isCropped;
     }
     void placeConvert(VkCommandBuffer cmdbuff, VkDeviceAddress temp){
         uint64_t maxWidth = std::max(source_colorspace.target_width, source_colorspace.width);
@@ -257,20 +278,10 @@ public:
             if (placeChromaUpsample(deviceHelper, cmdbuff, temp, intermediatePlanes, width, height, source_colorspace.chromaLocation, subsampling) != 0) throw VshipError(NotSupported, __FILE__, __LINE__, "the given chroma subsampling is not supported");
             placeYUVToLinRGB(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.YUVMatrix, source_colorspace.transferFunction, libjxlArithmetic);
         }
-        //then we manage primaries, it depends on the destination
-        switch(destination){
-            case linRGB:
-                break; //we are done already
-            case XYZ:
-                if (source_colorspace.primaries != Vship_PRIMARIES_INTERNAL){
-                    placePrimariesToPrimaries(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.primaries, Vship_PRIMARIES_INTERNAL);
-                }
-                break;
-            case linRGBBT709:
-                if (source_colorspace.primaries != Vship_PRIMARIES_BT709){
-                    placePrimariesToPrimaries(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.primaries, Vship_PRIMARIES_BT709);
-                }
-                break;
+        //then the primaries of the destination
+        Vship_Primaries_t primaries;
+        if (destinationPrimaries(primaries)){
+            placePrimariesToPrimaries(deviceHelper, cmdbuff, intermediatePlanes[0], intermediatePlanes[1], intermediatePlanes[2], width*height, source_colorspace.primaries, primaries);
         }
 
         //now we crop and put in out

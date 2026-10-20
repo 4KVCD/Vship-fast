@@ -402,6 +402,7 @@ public:
         const Vship_Colorspace_t* colorspaces[2] = {&ref_colorspace, &dis_colorspace};
         for (int k = 0; k < 2; k++){
             VshipColorConvert::Converter::PixelConversion conversion;
+            //the converters' destination is linRGB, so the conversion has no primaries step (yuvToDKL does its own)
             if (!resizeFirst && converters[k]->outputIsPixelConversion() && converters[k]->placeChromaForPixelConversion(cmdBuff, converterTemps[k], conversion)){
                 placeYUVToDKL(deviceHelper, cmdBuff, conversion, filterSrcs_d[k], source_width, source_height, Y_peak, Y_black, Y_refl, exposure, colorspaces[k]->transferFunction, isHDR, colorspaces[k]->primaries);
                 continue;

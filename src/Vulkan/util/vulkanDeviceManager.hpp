@@ -51,7 +51,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"primaries.spv", {"primariesToPrimaries"}},
     {"YUVToLinRGB.spv", {"YUVToLinRGB", "YUVToLinRGBUpsampled"}},
     //SSIMU2
-    {"downsampleSSIMU2.spv", {"downsample"}},
+    {"downsampleSSIMU2.spv", {"downsample", "yuvToPyramid8", "yuvToPyramid16"}},
     {"makeXYBSSIMU2.spv", {"rgb_to_positive_xyb"}},
     {"scoreSSIMU2.spv", {"blurRows", "blurColumnsAndScore"}},
     //Butter
@@ -85,7 +85,12 @@ struct VshipDeviceHelper{
     std::unordered_map<std::string, VkPipeline> cachedPipeline;
     //can be usedas expected
     VkDeviceManager device;
+    //the GPU's PCI vendor ID (VkPhysicalDeviceProperties::vendorID), for kernels whose best workgroup size differs
+    uint32_t vendorID;
     VshipDeviceHelper(VkInstance instance, VkPhysicalDevice& hd) : device(instance, hd) {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(hd, &properties);
+        vendorID = properties.vendorID;
         //auto init = std::chrono::high_resolution_clock::now();
         for (const auto& [shaderName, entry_points] : entry_pointsPerShader) {
             VkShaderModule shaderModule = device.loadShaderModule(shaderNameToByteCode[shaderName]);
