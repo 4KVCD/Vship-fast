@@ -59,13 +59,13 @@ float3 unfused3(float3 v, uint zero){
     return float3(unfused(v.x, zero), unfused(v.y, zero), unfused(v.z, zero));
 }
 
-// The pixel (x, y) of the image in linear RGB, as YUVToLinRGBUpsampled computes it from the luma and the
+// The pixel (x, y) of the image in linear RGB, as YUVToLinRGBUpsampled computes it from the luma (lumaAt) and the
 // horizontally upsampled chroma (Converter::placeChromaForPixelConversion), then converted to the destination
 // primaries when toPrimaries is set, as primariesToPrimaries does. Each step's result went through memory, so it
 // goes through unfused() and the compiler cannot combine the steps' arithmetic.
-float3 linearRGB(float* luma, float* chroma1, float* chroma2, int64_t x, int64_t y, int64_t width, int64_t height, int verticalMode, Vship_YUVMatrix_t matrix, Vship_TransferFunction_t transfer, int libjxlArithmetic, int toPrimaries, Vship_Primaries_t primariesSource, Vship_Primaries_t primariesDestination, uint zero){
+float3 linearRGB(float* luma, uint8_t* rawLuma, int rawLumaFormat, float rawLumaScale, float* chroma1, float* chroma2, int64_t x, int64_t y, int64_t width, int64_t height, int verticalMode, Vship_YUVMatrix_t matrix, Vship_TransferFunction_t transfer, int libjxlArithmetic, int toPrimaries, Vship_Primaries_t primariesSource, Vship_Primaries_t primariesDestination, uint zero){
     const int64_t i = y*width + x;
-    float3 val = {luma[i], unfused(upsampledChroma(chroma1, x, y, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, y, width, height, verticalMode), zero)};
+    float3 val = {lumaAt(luma, rawLuma, rawLumaFormat, rawLumaScale, i, width, zero), unfused(upsampledChroma(chroma1, x, y, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, y, width, height, verticalMode), zero)};
     val = inverseMatrixNCL(val, matrix);
     val = inverseTransfer(val, transfer, libjxlArithmetic != 0);
     val = inverseMatrixCL(val, matrix);
@@ -137,7 +137,7 @@ void setTilePixel(int index, float3 rgb){
 // the tile. A 32x32 workgroup would be 1024 threads, of which an NVIDIA SM holds only one, idle behind the barriers
 // of the smaller scales: 32x8 is the fastest on an RTX 3070 and 32x16 on a Radeon 8060S (each 2-6% ahead of the
 // other), so the host picks the entry point by vendor. The work of a thread differs, its arithmetic does not.
-void yuvToPyramidBody<let ROWS : int>(uint3 threadIdx, uint3 blockIdx, float* luma, float* chroma1, float* chroma2, float* p0, float* p1, float* p2, uint64_t width64, uint64_t height64, int verticalMode, Vship_YUVMatrix_t matrix, Vship_TransferFunction_t transfer, int libjxlArithmetic, int toPrimaries, Vship_Primaries_t primariesSource, Vship_Primaries_t primariesDestination, uint zero){
+void yuvToPyramidBody<let ROWS : int>(uint3 threadIdx, uint3 blockIdx, float* luma, float* chroma1, float* chroma2, float* p0, float* p1, float* p2, uint64_t width64, uint64_t height64, int verticalMode, Vship_YUVMatrix_t matrix, Vship_TransferFunction_t transfer, int libjxlArithmetic, int toPrimaries, Vship_Primaries_t primariesSource, Vship_Primaries_t primariesDestination, uint zero, uint8_t* rawLuma, int rawLumaFormat, float rawLumaScale){
     const Scales scales = scalesOf((int64_t)width64, (int64_t)height64);
     const int threadIndex = threadIdx.y*PYRAMID_TILE + threadIdx.x;
 
@@ -149,7 +149,7 @@ void yuvToPyramidBody<let ROWS : int>(uint3 threadIdx, uint3 blockIdx, float* lu
         const int64_t x0 = blockIdx.x*PYRAMID_TILE + tx;
         const int64_t y0 = blockIdx.y*PYRAMID_TILE + ty;
         if (x0 < scales.width[0] && y0 < scales.height[0]){
-            const float3 rgb = linearRGB(luma, chroma1, chroma2, x0, y0, scales.width[0], scales.height[0], verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero);
+            const float3 rgb = linearRGB(luma, rawLuma, rawLumaFormat, rawLumaScale, chroma1, chroma2, x0, y0, scales.width[0], scales.height[0], verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero);
             setTilePixel(ty*PYRAMID_TILE + tx, rgb);
             storeXYB(p0, p1, p2, y0*scales.width[0] + x0, rgb_to_positive_xyb_d(rgb, zero));
         }
@@ -195,12 +195,12 @@ void yuvToPyramidBody<let ROWS : int>(uint3 threadIdx, uint3 blockIdx, float* lu
 
 [shader("compute")]
 [numthreads(PYRAMID_TILE, 8, 1)]
-void yuvToPyramid8(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform int toPrimaries, uniform Vship_Primaries_t primariesSource, uniform Vship_Primaries_t primariesDestination, uniform uint zero){
-    yuvToPyramidBody<8>(threadIdx, blockIdx, luma, chroma1, chroma2, p0, p1, p2, width64, height64, verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero);
+void yuvToPyramid8(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform int toPrimaries, uniform Vship_Primaries_t primariesSource, uniform Vship_Primaries_t primariesDestination, uniform uint zero, uniform uint8_t* rawLuma, uniform int rawLumaFormat, uniform float rawLumaScale){
+    yuvToPyramidBody<8>(threadIdx, blockIdx, luma, chroma1, chroma2, p0, p1, p2, width64, height64, verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero, rawLuma, rawLumaFormat, rawLumaScale);
 }
 
 [shader("compute")]
 [numthreads(PYRAMID_TILE, 16, 1)]
-void yuvToPyramid16(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform int toPrimaries, uniform Vship_Primaries_t primariesSource, uniform Vship_Primaries_t primariesDestination, uniform uint zero){
-    yuvToPyramidBody<16>(threadIdx, blockIdx, luma, chroma1, chroma2, p0, p1, p2, width64, height64, verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero);
+void yuvToPyramid16(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* p0, uniform float* p1, uniform float* p2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform int toPrimaries, uniform Vship_Primaries_t primariesSource, uniform Vship_Primaries_t primariesDestination, uniform uint zero, uniform uint8_t* rawLuma, uniform int rawLumaFormat, uniform float rawLumaScale){
+    yuvToPyramidBody<16>(threadIdx, blockIdx, luma, chroma1, chroma2, p0, p1, p2, width64, height64, verticalMode, matrix, transfer, libjxlArithmetic, toPrimaries, primariesSource, primariesDestination, zero, rawLuma, rawLumaFormat, rawLumaScale);
 }

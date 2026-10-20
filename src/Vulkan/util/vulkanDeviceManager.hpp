@@ -35,7 +35,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"Planed.spv", {"StrideEliminator", "StrideAdder"}},
     {"kernelTest.spv", {"main"}},
     {"basicOperations.spv", {"multArray", "subArray", "memSet"}},
-    {"anyDepthToFloat.spv", {"convertToFloatPlane"}},
+    {"anyDepthToFloat.spv", {"convertToFloatPlane", "repackRows"}},
     {"chromaUpsample.spv", {
         "bicubicHorizontalCenterUpscaleX2", 
         "bicubicHorizontalLeftUpscaleX2", 

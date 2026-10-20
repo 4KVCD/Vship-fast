@@ -25,14 +25,15 @@ void placeYuvToPyramid(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff,
     const bool nvidia = deviceHelper->vendorID == 0x10DE;
     VkPipeline pipeline = deviceHelper->cachedPipeline[nvidia ? "downsampleSSIMU2.spv:yuvToPyramid8" : "downsampleSSIMU2.spv:yuvToPyramid16"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, conversion.luma, conversion.chroma1, conversion.chroma2, planes[0], planes[1], planes[2], (uint64_t)width, (uint64_t)height, conversion.verticalMode, (int)conversion.matrix, (int)conversion.transfer, (int)conversion.libjxlArithmetic, (int)conversion.toPrimaries, (int)conversion.primariesSource, (int)conversion.primariesDestination, zero);
+    fillKernelArguments(0, kernelArguments, conversion.luma, conversion.chroma1, conversion.chroma2, planes[0], planes[1], planes[2], (uint64_t)width, (uint64_t)height, conversion.verticalMode, (int)conversion.matrix, (int)conversion.transfer, (int)conversion.libjxlArithmetic, (int)conversion.toPrimaries, (int)conversion.primariesSource, (int)conversion.primariesDestination, zero, conversion.rawLuma, conversion.rawLumaFormat, conversion.rawLumaScale);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (width-1)/tile + 1, (height-1)/tile + 1, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {planes[0], planeSize*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {planes[1], planeSize*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {planes[2], planeSize*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {conversion.chroma1, width*conversion.chromaHeight*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {conversion.chroma2, width*conversion.chromaHeight*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
+        {conversion.chroma2, width*conversion.chromaHeight*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {(conversion.rawLuma != 0) ? conversion.rawLuma : conversion.luma, conversion.lumaBytes, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });
 }
 
