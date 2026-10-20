@@ -9,9 +9,9 @@ void inline placeAddsupersample2X(VshipDeviceHelper* deviceHelper, VkCommandBuff
     uint64_t newh = (height-1)/2 + 1;
     uint64_t neww = (width-1)/2 + 1;
 
-    VkPipeline pipeline = deviceHelper->cachedPipeline["downupsampleButter.spv:addsupersample2X"];
+    VkPipeline pipeline = deviceHelper->fp64Shader("downupsample", "addsupersample2X");
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, diffmap, diffmapsmall, width, height, w);
+    fillKernelArguments(0, kernelArguments, diffmap, diffmapsmall, width, height, w, 0u); //0u: the run-time zero of the double-float steps
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {diffmap, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},

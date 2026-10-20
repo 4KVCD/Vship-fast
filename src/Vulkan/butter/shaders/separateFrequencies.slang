@@ -1,4 +1,5 @@
 import frequencyOpsModule;
+import exactMathModule;
 
 import xybLowFreqModule;
 
@@ -16,7 +17,7 @@ float SuppressUhfInBrightAreas_Device(float hf, float brightness, float mul, flo
 float supressXbyY_Device(float x, float yval, float yw){
     const float s = 0.653020556257f;
     const float oneMinusS = 0.346979443743f;
-    const float scaler = fma(yw / fma(yval, yval, yw), oneMinusS, s);
+    const float scaler = fma(divide(yw, fma(yval, yval, yw)), oneMinusS, s);
     return x * scaler;
 }
 

@@ -61,10 +61,13 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"separableBlur7Butter.spv", {"separableBlur7"}},
     {"separableBlur16Butter.spv", {"separableBlur16"}},
     {"downupsampleButter.spv", {"addsupersample2X"}},
+    {"downupsampleFp64Butter.spv", {"addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
-    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff", "L2diffs"}},
+    {"maltaDiffFp64Butter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
+    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2diffs"}},
     {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit"}},
     {"combineMasksButter.spv", {"computeDiffmap"}},
+    {"combineMasksFp64Butter.spv", {"computeDiffmap"}},
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
     {"separateFrequenciesButter.spv", {
         "supressXbyY"
@@ -94,6 +97,8 @@ struct VshipDeviceHelper{
         vendorID = properties.vendorID;
         //auto init = std::chrono::high_resolution_clock::now();
         for (const auto& [shaderName, entry_points] : entry_pointsPerShader) {
+            //the double versions of shaders (see fp64Shader) only on GPUs with 64-bit floats
+            if (shaderName.find("Fp64") != std::string::npos && !device.hasFloat64) continue;
             VkShaderModule shaderModule = device.loadShaderModule(shaderNameToByteCode[shaderName]);
             //std::cout << shaderName << " " << shaderNameToByteCode[shaderName].size() << std::endl;
             for (const std::string& entry_point: entry_points){
@@ -104,6 +109,11 @@ struct VshipDeviceHelper{
         //auto fin = std::chrono::high_resolution_clock::now();
         //uint64_t millitaken = std::chrono::duration_cast<std::chrono::milliseconds>(fin - init).count();
         //std::cout << "Pipeline Creation took " << millitaken << " ms" << std::endl;
+    }
+    //The pipeline "<name>Fp64Butter.spv:<entry>" on GPUs with 64-bit floats, else "<name>Butter.spv:<entry>": the
+    //double version computes like libjxl, the float one approximates it.
+    VkPipeline fp64Shader(const std::string& name, const std::string& entry){
+        return cachedPipeline[name + (device.hasFloat64 ? "Fp64Butter.spv:" : "Butter.spv:") + entry];
     }
     ~VshipDeviceHelper(){
 #ifndef _WIN32

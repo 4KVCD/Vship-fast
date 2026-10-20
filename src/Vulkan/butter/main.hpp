@@ -59,28 +59,28 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
     //libjxl's default and what its butteraugli_main tool uses (0.8 is what libjxl's encoder asks for)
     const float hf_asymmetry_ = 1.0f;
 
-    const float wUhfMalta = 1.10039032555f;
-    const float norm1Uhf = 71.7800275169f;
+    const double wUhfMalta = 1.10039032555;
+    const double norm1Uhf = 71.7800275169;
     placeMaltaDiffMap(deviceHelper, cmdBuff, uhf1[1], uhf2[1], block_diff_ac[1], width, height, wUhfMalta * hf_asymmetry_, wUhfMalta / hf_asymmetry_, norm1Uhf);
 
-    const float wUhfMaltaX = 173.5f;
-    const float norm1UhfX = 5.0f;
+    const double wUhfMaltaX = 173.5;
+    const double norm1UhfX = 5.0;
     placeMaltaDiffMap(deviceHelper, cmdBuff, uhf1[0], uhf2[0], block_diff_ac[0], width, height, wUhfMaltaX * hf_asymmetry_, wUhfMaltaX / hf_asymmetry_, norm1UhfX);
 
-    const float wHfMalta = 18.7237414387f;
-    const float norm1Hf = 4498534.45232f;
+    const double wHfMalta = 18.7237414387;
+    const double norm1Hf = 4498534.45232;
     placeMaltaDiffMapLF(deviceHelper, cmdBuff, hf1[1], hf2[1], block_diff_ac[1], width, height, wHfMalta * std::sqrt(hf_asymmetry_), wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf);
 
-    const float wHfMaltaX = 6923.99476109f;
-    const float norm1HfX = 8051.15833247f;
+    const double wHfMaltaX = 6923.99476109;
+    const double norm1HfX = 8051.15833247;
     placeMaltaDiffMapLF(deviceHelper, cmdBuff, hf1[0], hf2[0], block_diff_ac[0], width, height, wHfMaltaX * std::sqrt(hf_asymmetry_), wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX);
 
-    const float wMfMalta = 37.0819870399f;
-    const float norm1Mf = 130262059.556f;
+    const double wMfMalta = 37.0819870399;
+    const double norm1Mf = 130262059.556;
     placeMaltaDiffMapLF(deviceHelper, cmdBuff, mf1[1], mf2[1], block_diff_ac[1], width, height, wMfMalta, wMfMalta, norm1Mf);
 
-    const float wMfMaltaX = 8246.75321353f;
-    const float norm1MfX = 1009002.70582f;
+    const double wMfMaltaX = 8246.75321353;
+    const double norm1MfX = 1009002.70582;
     placeMaltaDiffMapLF(deviceHelper, cmdBuff, mf1[0], mf2[0], block_diff_ac[0], width, height, wMfMaltaX, wMfMaltaX, norm1MfX);
 
     const float wmul[9] = {
@@ -89,13 +89,11 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
       29.2353797994f, 0.844626970982f, 0.703646627719f,
     };
 
-    for (int c = 0; c < 2; c++){
-        placeL2AsymDiff(deviceHelper, cmdBuff, hf1[c], hf2[c], block_diff_ac[c], width*height, wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_);
-    }
-    //then L2diff of the medium frequencies into block_diff_ac and of the low ones (converted by XybLowFreqToVals) into
-    //block_diff_dc, in one pass. It finds the planes at their places in mem_d, and the 3 planes of each block_diff one
-    //after the other, as they are allocated.
-    placeL2diffs(deviceHelper, cmdBuff, mem_d, block_diff_ac[0], block_diff_dc[0], width*height, wmul+3, wmul+6);
+    //libjxl's L2 differences in one pass: L2DiffAsymmetric of the high frequencies and L2Diff of the medium ones into
+    //block_diff_ac, SetL2Diff of the low ones (converted by XybLowFreqToVals) into block_diff_dc. It finds the planes at
+    //their places in mem_d, and the 3 planes of each block_diff one after the other, as they are allocated.
+    const float asymWeights[4] = {wmul[0] * hf_asymmetry_, wmul[0] / hf_asymmetry_, wmul[1] * hf_asymmetry_, wmul[1] / hf_asymmetry_};
+    placeL2diffs(deviceHelper, cmdBuff, mem_d, block_diff_ac[0], block_diff_dc[0], width*height, asymWeights, wmul+3, wmul+6);
 
     //from now on, lf and mf are not used so we will reuse the memory
     VkDeviceAddress mask = temp[1];

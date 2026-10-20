@@ -13,10 +13,11 @@
 //   the taps are added in pairs around the centre, each pair times its weight scaled by 1/(sum of the weights), the
 //   pairs spread over 4 partial sums in turn; near a border (ConvolveBorderColumn) only the taps inside the image
 //   are summed, with their unscaled weights, then the sum is scaled by 1/(sum of those weights).
-// - Every operation is rounded as libjxl's compiled tools round it: a multiplication and addition that libjxl writes
-//   in one C++ expression (sum += a*b, x*k + s) is fused, written here as fma(); every other operation is rounded on
-//   its own (the build marks them all NoContraction, spvFileToCppHeader.cpp). This is what matches libjxl 0.12.0's
-//   butteraugli_main to its printed digits.
+// - Every operation is rounded as libjxl's compiled code rounds it, which makes the results bit-identical to libjxl
+//   0.12.0's: Separable5's fused multiply-adds are its explicit MulAdd; ConvolutionWithTranspose and
+//   ConvolveBorderColumn are compiled for the baseline CPU, without fused multiply-adds, so every operation is
+//   rounded on its own (the build marks them all NoContraction, spvFileToCppHeader.cpp); the border scale
+//   1/(sum of the weights) is a correctly rounded division, as the CPU's is.
 //
 // The kernel buffer holds the 2*R + 1 weights, then the R + 1 scaled weights (GaussianHandle in gaussianblur.hpp).
 //
@@ -32,6 +33,7 @@
 // - POST_SUBTRACT_AMPLIFY_RANGE: second = src - b and dst = AmplifyRangeAroundZero(b, w).
 
 import opsinModule;
+import exactMathModule;
 import frequencyOpsModule;
 
 #define CONCAT2(a, b) a##b
@@ -90,10 +92,10 @@ float blurPosition(float in[TAPS], int pos, int size, float k[TAPS], float scale
         [ForceUnroll]
         for (int j = 0; j < FIRST_PAIRS; j++) partial[j] = (in[j] + in[TAPS - 1 - j])*scaled[j];
         [ForceUnroll]
-        for (int j = 4; j < R; j++) partial[j % 4] = fma(in[j] + in[TAPS - 1 - j], scaled[j], partial[j % 4]);
+        for (int j = 4; j < R; j++) partial[j % 4] = partial[j % 4] + (in[j] + in[TAPS - 1 - j])*scaled[j];
         if (R == 3){
-            // case 7: in[3]*sk3 + sum0 + sum1 + sum2, one expression
-            return (fma(in[3], scaled[3], partial[0]) + partial[1]) + partial[2];
+            // case 7: in[3]*sk3 + sum0 + sum1 + sum2
+            return ((in[3]*scaled[3] + partial[0]) + partial[1]) + partial[2];
         }
         // the other cases: sum = centre*weight, then sum + sum0 + sum1 + sum2 + sum3
         const float centre = in[R]*scaled[R];
@@ -107,10 +109,10 @@ float blurPosition(float in[TAPS], int pos, int size, float k[TAPS], float scale
         const int p = pos - R + j;
         if (p >= 0 && p < size){
             weight += k[j];
-            sum = fma(in[j], k[j], sum);
+            sum = sum + in[j]*k[j];
         }
     }
-    return sum*(1.0f/weight);
+    return sum*divide(1.0f, weight);
 }
 
 // Element i of the input tile is row y0 - R + i / (TILE_X + 2*R) and column x0 - R + i % (TILE_X + 2*R) of the image:
@@ -272,9 +274,11 @@ void CONCAT(separableBlur, RADIUS)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
 }
 
 #if RADIUS == 2
-// Butteraugli's downsample of the tile at (x0, y0) into halfPlane, from the input tile in shared memory (storeTile): the
-// mean of each 2x2 block, the last row and column repeated, added up in downsample's order. A tile's blocks stay
-// inside it, as x0 and y0 are even. TILE_X*TILE_Y/4 is a multiple of THREADS.
+// libjxl's SubSample2x of the tile at (x0, y0) into halfPlane, from the input tile in shared memory (storeTile): each
+// output adds 0.25 times each of its block's pixels in the image's order (top left, top right, bottom left, bottom
+// right), only those inside the image; an output of the last column of an odd width, or of the last row of an odd
+// height, is then doubled (twice in the corner). A tile's blocks stay inside it, as x0 and y0 are even.
+// TILE_X*TILE_Y/4 is a multiple of THREADS.
 void storeHalfScale(float* halfPlane, int64_t width, int64_t height, int x0, int y0, int tid){
     const int64_t halfWidth = (width - 1)/2 + 1;
     const int64_t halfHeight = (height - 1)/2 + 1;
@@ -284,16 +288,16 @@ void storeHalfScale(float* halfPlane, int64_t width, int64_t height, int x0, int
         const int64_t hx = x0/2 + j % (TILE_X/2);
         const int64_t hy = y0/2 + j / (TILE_X/2);
         if (hx >= halfWidth || hy >= halfHeight) continue;
-        const int left = (int)min(2*hx, width - 1);
-        const int right = (int)min(2*hx + 1, width - 1);
-        const int top = (int)min(2*hy, height - 1);
-        const int bottom = (int)min(2*hy + 1, height - 1);
-        float sum = 0.0f;
-        sum += storedTilePixel(x0, y0, left, top);
-        sum += storedTilePixel(x0, y0, left, bottom);
-        sum += storedTilePixel(x0, y0, right, top);
-        sum += storedTilePixel(x0, y0, right, bottom);
-        sum *= 0.25f;
+        const int left = (int)(2*hx);
+        const int top = (int)(2*hy);
+        const bool hasRight = left + 1 < (int)width;
+        const bool hasBottom = top + 1 < (int)height;
+        float sum = 0.25f*storedTilePixel(x0, y0, left, top);
+        if (hasRight) sum = sum + 0.25f*storedTilePixel(x0, y0, left + 1, top);
+        if (hasBottom) sum = sum + 0.25f*storedTilePixel(x0, y0, left, top + 1);
+        if (hasRight && hasBottom) sum = sum + 0.25f*storedTilePixel(x0, y0, left + 1, top + 1);
+        if (!hasRight) sum *= 2.0f;
+        if (!hasBottom) sum *= 2.0f;
         halfPlane[hy*halfWidth + hx] = sum;
     }
 }

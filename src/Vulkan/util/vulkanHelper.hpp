@@ -471,7 +471,14 @@ class VkDeviceManager{
         createInfo.pQueueCreateInfos = queueCreateInfos;
         createInfo.queueCreateInfoCount = transferFamily.has_value() ? 2 : 1;
 
-        createInfo.pNext = &requiredFeatures;
+        //64-bit floats when the GPU has them: the kernels that compute in double like libjxl (Butteraugli's mask and
+        //Malta weights, its scales' mix) then use their double version, the others their float approximation
+        VkPhysicalDeviceFeatures supported;
+        vkGetPhysicalDeviceFeatures(physicalDevice, &supported);
+        hasFloat64 = supported.shaderFloat64 == VK_TRUE;
+        VkPhysicalDeviceFeatures2 features = requiredFeatures;
+        features.features.shaderFloat64 = hasFloat64 ? VK_TRUE : VK_FALSE;
+        createInfo.pNext = &features;
         createInfo.pEnabledFeatures = nullptr;
 
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
@@ -548,6 +555,8 @@ class VkDeviceManager{
         return res;
     }
 public:
+    //whether shaders may use 64-bit floats (shaderFloat64, enabled when the GPU has it)
+    bool hasFloat64 = false;
     VkDeviceManager(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         queueFamily = findQueueFamilies(physicalDevice);
         transferFamily = findTransferOnlyQueueFamily(physicalDevice);
