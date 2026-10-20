@@ -5,11 +5,16 @@
 // written before the buffer's first dispatch and after each dispatch, and the timestamps are read back when the
 // fence of the submission is waited on. A kernel's time is the time between the end of the previous command and
 // its own end, so it includes the barrier waits before it. The totals per kernel name are printed to stderr when the
-// process exits.
+// process exits, with the medians of a timeline of the submissions: the host's time between the end of one fence
+// wait and the next submission (recording, copies into the upload buffer), the time from the submission to the end
+// of its fence wait, and the GPU's span from the first kernel's start to the last kernel's end of the submission.
+// The wait minus the span is the time spent on the upload, the queue handoffs and waking the host. The host's time
+// is measured across all threads, so it means something only when one thread computes.
 
 #ifdef VSHIP_PROFILE
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <map>
 #include <mutex>
@@ -32,6 +37,24 @@ struct Total {
     uint64_t calls = 0;
 };
 
+using Clock = std::chrono::steady_clock;
+
+// One value per submission that has a fence, in nanoseconds. Medians are printed, so that the setup's submissions
+// and the calling program's pauses between its runs do not count.
+struct Timeline {
+    std::vector<double> hostBetween; // from the end of the previous fence wait to this submission
+    std::vector<double> wait;        // from this submission to the end of its fence wait
+    std::vector<double> gpuSpan;     // from the first kernel's start to the last kernel's end
+    bool waitedBefore = false;
+    Clock::time_point lastCompleted;
+};
+
+static double median(std::vector<double> values){
+    if (values.empty()) return 0;
+    std::nth_element(values.begin(), values.begin() + values.size()/2, values.end());
+    return values[values.size()/2];
+}
+
 struct Profiler {
     std::mutex lock;
     VkDevice device = VK_NULL_HANDLE;
@@ -39,7 +62,13 @@ struct Profiler {
     std::unordered_map<VkPipeline, std::string> names;
     std::unordered_map<VkCommandBuffer, Recording> recordings;
     std::unordered_map<VkFence, std::vector<VkCommandBuffer>> pending; // submitted, waiting for their fence
+    std::unordered_map<VkFence, Clock::time_point> submittedAt;
     std::map<std::string, Total> totals;
+    Timeline timeline;
+
+    static double nsBetween(Clock::time_point a, Clock::time_point b){
+        return (double)std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count();
+    }
 
     void init(VkDevice dev, VkPhysicalDevice physicalDevice){
         std::lock_guard<std::mutex> guard(lock);
@@ -86,24 +115,40 @@ struct Profiler {
         std::lock_guard<std::mutex> guard(lock);
         for (uint32_t i = 0; i < count; i++)
             if (recordings.count(cmdbuffs[i])) pending[fence].push_back(cmdbuffs[i]);
+        if (fence == VK_NULL_HANDLE) return;
+        const Clock::time_point now = Clock::now();
+        submittedAt[fence] = now;
+        if (timeline.waitedBefore) timeline.hostBetween.push_back(nsBetween(timeline.lastCompleted, now));
     }
     // The fence was waited on: every buffer submitted with it has finished.
     void completed(VkFence fence){
         std::lock_guard<std::mutex> guard(lock);
+        const Clock::time_point now = Clock::now();
+        auto submission = submittedAt.find(fence);
+        if (submission != submittedAt.end()){
+            timeline.wait.push_back(nsBetween(submission->second, now));
+            submittedAt.erase(submission);
+        }
+        timeline.lastCompleted = now;
+        timeline.waitedBefore = true;
         auto it = pending.find(fence);
         if (it == pending.end()) return;
         std::vector<uint64_t> ticks;
+        uint64_t firstTick = UINT64_MAX, lastTick = 0;
         for (VkCommandBuffer cmdbuff : it->second){
             Recording& rec = recordings[cmdbuff];
             const uint32_t n = (uint32_t)rec.kernels.size() + 1;
             ticks.resize(n);
             if (vkGetQueryPoolResults(device, rec.pool, 0, n, n*sizeof(uint64_t), ticks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS) continue;
+            firstTick = std::min(firstTick, ticks[0]);
+            lastTick = std::max(lastTick, ticks[n-1]);
             for (uint32_t k = 0; k + 1 < n; k++){
                 Total& t = totals[names.count(rec.kernels[k]) ? names[rec.kernels[k]] : "?"];
                 t.ns += (double)(ticks[k+1] - ticks[k])*nsPerTick;
                 t.calls++;
             }
         }
+        if (lastTick > firstTick) timeline.gpuSpan.push_back((double)(lastTick - firstTick)*nsPerTick);
         pending.erase(it);
     }
     ~Profiler(){
@@ -114,6 +159,9 @@ struct Profiler {
         fprintf(stderr, "vship profile: %.3f ms of GPU time in kernels\n", all*1e-6);
         for (auto& [n, t] : sorted)
             fprintf(stderr, "  %6.2f%%  %10.3f ms  %8llu calls  %9.2f us/call  %s\n", 100.0*t.ns/all, t.ns*1e-6, (unsigned long long)t.calls, t.ns*1e-3/t.calls, n.c_str());
+        if (timeline.wait.empty()) return;
+        fprintf(stderr, "vship timeline: %zu submissions, median %.3f ms host before one, %.3f ms waited on, %.3f ms GPU span\n",
+            timeline.wait.size(), median(timeline.hostBetween)*1e-6, median(timeline.wait)*1e-6, median(timeline.gpuSpan)*1e-6);
     }
 };
 
