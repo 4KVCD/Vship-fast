@@ -46,7 +46,8 @@ constexpr uint32_t opExtension = 10, opExtInstImport = 11, opExtInst = 12, opMem
     opTypePointer = 32, opConstant = 43, opFunction = 54, opFunctionParameter = 55, opLabel = 248, opVariable = 59,
     opLoad = 61, opAccessChain = 65, opInBoundsAccessChain = 66, opDecorate = 71, opMemberDecorate = 72,
     opCompositeConstruct = 80, opFMul = 133, opVectorTimesScalar = 142, opMatrixTimesScalar = 143,
-    opVectorTimesMatrix = 144, opMatrixTimesVector = 145, opMatrixTimesMatrix = 146, opDot = 148;
+    opVectorTimesMatrix = 144, opMatrixTimesVector = 145, opMatrixTimesMatrix = 146, opDot = 148,
+    opExecutionModeId = 331, opDecorateId = 332, opDecorateString = 5632, opMemberDecorateString = 5633;
 constexpr uint32_t decorationNoContraction = 42, decorationOffset = 35, storagePushConstant = 9, glslFma = 50,
     capabilitySignedZeroInfNanPreserve = 4466, executionModeSignedZeroInfNanPreserve = 4461;
 
@@ -218,11 +219,11 @@ inline std::vector<char> rewrite(const std::vector<char>& embedded, bool fastMat
     emit(extensions);
     emitWhile({opExtInstImport});
     emit(imports);
-    emitWhile({opMemoryModel, opEntryPoint, opExecutionMode, 331 /*OpExecutionModeId*/});
+    emitWhile({opMemoryModel, opEntryPoint, opExecutionMode, opExecutionModeId});
     emit(modes);
     //debug instructions and annotations, then the types, constants and global variables
     size_t lastAnnotation = k;
-    for (size_t j = k; j < firstFunction; j++) if (inSection(opcode(module[j]), {opDecorate, opMemberDecorate, 332, 5632, 5633})) lastAnnotation = j + 1;
+    for (size_t j = k; j < firstFunction; j++) if (inSection(opcode(module[j]), {opDecorate, opMemberDecorate, opDecorateId, opDecorateString, opMemberDecorateString})) lastAnnotation = j + 1;
     for (; k < lastAnnotation; k++) emit({module[k]});
     emit(annotations);
     for (; k < firstFunction; k++) emit({module[k]});

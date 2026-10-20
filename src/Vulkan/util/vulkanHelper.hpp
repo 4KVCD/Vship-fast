@@ -638,14 +638,20 @@ public:
         vkDestroyPipeline(device, pipeline, nullptr);
 #endif
     }
-    //Destroys a buffer once no queue has work in flight. Another thread's handler may be computing: its command
-    //buffers never touch this buffer, but MoltenVK makes every buffer with a device address resident in every
-    //command buffer, and Metal fails a command buffer whose resources were freed under it ("Invalid Resource",
-    //device lost). Holding the queue locks keeps new work from being submitted meanwhile. So a handler being destroyed
-    //waits for the frames that other threads have in flight on the shared queue, and their next submissions wait for
-    //it. Buffers are only freed when a handler or a lazily grown buffer goes, never per frame, so the frame loop
-    //never waits here.
+    //Destroys a buffer. Another thread's handler may be computing meanwhile: its command buffers never touch this
+    //buffer, so Vulkan lets it go at once, and other GPUs do. MoltenVK, though, makes every buffer with a device
+    //address resident in every command buffer, and Metal fails a command buffer whose resources were freed under it
+    //("Invalid Resource", device lost). There the buffer is destroyed only once no queue has work in flight, with the
+    //queue locks held so that no new work is submitted meanwhile. A handler being destroyed on MoltenVK therefore
+    //waits, for each of its buffers, for the frames that other threads have in flight on the shared queue, and their
+    //next submissions wait for it. Buffers are only freed when a handler or a lazily grown buffer goes, never per
+    //frame, so the frame loop never waits here.
     void destroyBuffer(VkBuffer buffer, VmaAllocation allocation){
+        if (!isMoltenVK){
+            vkDestroyBuffer(device, buffer, NULL);
+            vmaFreeMemory(vmaAllocator, allocation);
+            return;
+        }
         std::lock_guard<std::mutex> computeGuard(queueLock);
         std::unique_lock<std::mutex> uploadGuard(uploadQueueLock, std::defer_lock);
         if (transferFamily.has_value()) uploadGuard.lock();
