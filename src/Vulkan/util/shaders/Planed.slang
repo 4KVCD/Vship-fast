@@ -5,7 +5,8 @@ void StrideEliminator(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Gr
     if (x >= width*height) return;
     uint64_t j = x%width;
     uint64_t i = x/width;
-    dst[i*width+j] = ((float*)((uint8_t*)src + i*stride))[j];
+    // the byte offset added to the address as an integer: SPIRV-Cross (MoltenVK) mistranslates byte-pointer arithmetic
+    dst[i*width+j] = ((float*)((uint64_t)src + i*stride))[j];
 }
 
 [shader("compute")]
@@ -15,5 +16,6 @@ void StrideAdder(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID
     if (x >= width*height) return;
     uint64_t j = x%width;
     uint64_t i = x/width;
-    ((float*)((uint8_t*)src + i*stride))[j] = dst[i*width+j];
+    // the byte offset added to the address as an integer: SPIRV-Cross (MoltenVK) mistranslates byte-pointer arithmetic
+    ((float*)((uint64_t)src + i*stride))[j] = dst[i*width+j];
 }

@@ -97,11 +97,13 @@ groupshared float termsOut[SIGNALS*TERMS][ROW_GROUP*OUT_PITCH]; // term k of sig
 // hidden, and each signal value is computed once instead of by each of its terms' threads.
 static const int CHUNK_LOADS = (ROW_GROUP*CHUNK_IN + ROW_THREADS - 1)/ROW_THREADS;
 
+// (threadIndex rather than thread: SPIRV-Cross keeps the names when MoltenVK turns the shader into Metal, where
+// thread is an address-space keyword.)
 // Element i of the chunk's inputs is column c0 - RADIUS - 1 + i % CHUNK_IN of row y0 + i / CHUNK_IN, 0 outside the image.
-void loadChunk(int thread, int c0, int y0, int width, int height, float* img1, float* img2, out float in1[CHUNK_LOADS], out float in2[CHUNK_LOADS]){
+void loadChunk(int threadIndex, int c0, int y0, int width, int height, float* img1, float* img2, out float in1[CHUNK_LOADS], out float in2[CHUNK_LOADS]){
     [ForceUnroll]
     for (int j = 0; j < CHUNK_LOADS; j++){
-        const int i = thread + j*ROW_THREADS;
+        const int i = threadIndex + j*ROW_THREADS;
         const int r = i / CHUNK_IN;
         const int x = c0 - RADIUS - 1 + i - r*CHUNK_IN;
         const int y = y0 + r;
@@ -112,10 +114,10 @@ void loadChunk(int thread, int c0, int y0, int width, int height, float* img1, f
     }
 }
 
-void storeChunk(int thread, float in1[CHUNK_LOADS], float in2[CHUNK_LOADS], uint zero){
+void storeChunk(int threadIndex, float in1[CHUNK_LOADS], float in2[CHUNK_LOADS], uint zero){
     [ForceUnroll]
     for (int j = 0; j < CHUNK_LOADS; j++){
-        const int i = thread + j*ROW_THREADS;
+        const int i = threadIndex + j*ROW_THREADS;
         const int r = i / CHUNK_IN;
         if (i < ROW_GROUP*CHUNK_IN){
             [ForceUnroll]
@@ -137,7 +139,7 @@ void blurRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     const int lane = threadIdx.x; // the row of this thread
     const int s = threadIdx.y / TERMS;
     const int k = threadIdx.y % TERMS;
-    const int thread = threadIdx.x + threadIdx.y*ROW_GROUP;
+    const int threadIndex = threadIdx.x + threadIdx.y*ROW_GROUP;
     const int y0 = blockIdx.x*ROW_GROUP;
     const uint64_t planeSize = (uint64_t)width*(uint64_t)height;
 
@@ -152,12 +154,12 @@ void blurRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     const int blocksEnd = width - RADIUS + 1 - 3;  // libjxl's blocks of 4 start before this
     int n = -RADIUS + 1;
     float in1[CHUNK_LOADS], in2[CHUNK_LOADS];
-    loadChunk(thread, 0, y0, width, height, img1, img2, in1, in2);
+    loadChunk(threadIndex, 0, y0, width, height, img1, img2, in1, in2);
     for (int c0 = 0; c0 < width; c0 += CHUNK){
         // signalsIn[.][r*IN_PITCH + i] is column c0 - RADIUS - 1 + i of row y0 + r
-        storeChunk(thread, in1, in2, zero);
+        storeChunk(threadIndex, in1, in2, zero);
         GroupMemoryBarrierWithGroupSync();
-        if (c0 + CHUNK < width) loadChunk(thread, c0 + CHUNK, y0, width, height, img1, img2, in1, in2);
+        if (c0 + CHUNK < width) loadChunk(threadIndex, c0 + CHUNK, y0, width, height, img1, img2, in1, in2);
 
         const int rowBase = lane*IN_PITCH - (c0 - RADIUS - 1); // signalsIn index of column 0 of this lane's row
         const int end = min(c0 + CHUNK, width);
@@ -198,7 +200,7 @@ void blurRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
         GroupMemoryBarrierWithGroupSync();
 
         // the outputs, term 0 + (term 1 + term 2) as libjxl adds them, written one row of a signal at a time
-        for (int i = thread; i < SIGNALS*ROW_GROUP*CHUNK; i += ROW_THREADS){
+        for (int i = threadIndex; i < SIGNALS*ROW_GROUP*CHUNK; i += ROW_THREADS){
             const int signalIndex = i / (ROW_GROUP*CHUNK);
             const int r = (i / CHUNK) % ROW_GROUP;
             const int column = i % CHUNK;

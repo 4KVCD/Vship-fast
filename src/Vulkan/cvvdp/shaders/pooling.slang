@@ -58,15 +58,21 @@ struct ReduceJob {
     float scale;
 };
 
+// Input i of a job, read at its address taken as an integer: SPIRV-Cross, which MoltenVK turns SPIR-V into Metal
+// with, mistranslates job.src[i] for a job read from a buffer (it indexes the jobs instead of src), and job.dst too.
+float jobInput(ReduceJob job, int64_t i){
+    return *(float*)((uint64_t)job.src + (uint64_t)i*4);
+}
+
 // The value input i of a job contributes to its sum, as in reduceSum
 float reduceInput(ReduceJob job, int64_t i, int power){
     if (i >= job.size) return 0;
     if ((job.conditions&4) == 4){ //applyPower
-        float value = job.src[i]*job.scale;
+        float value = jobInput(job, i)*job.scale;
         if ((job.conditions&16) == 16) value = max(value, 0.01f);
         return ((job.conditions&8) == 8) ? safe_pow(value, power) : pow(value, power);
     }
-    return job.src[i];
+    return jobInput(job, i);
 }
 
 // reduceSum for several jobs at once (blockIdx.y), with the same sums in the same order. reduceSum adds the 1024
@@ -113,6 +119,6 @@ void reduceSums(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID,
         if ((job.conditions&2) == 2) { //applyInversePower
             res = ((job.conditions&8) == 8) ? safe_pow(res, 1.f/(float)power) : pow(res, 1.f/(float)power);
         }
-        job.dst[block] = res;
+        *(float*)((uint64_t)job.dst + (uint64_t)block*4) = res; // job.dst[block], as jobInput reads
     }
 }

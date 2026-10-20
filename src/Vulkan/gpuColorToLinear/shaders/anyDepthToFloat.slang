@@ -40,7 +40,8 @@ float pickValue(uint8_t* source_plane, uint64_t x, uint64_t stride, uint64_t wid
     
     const uint64_t line = x/width;
     const uint64_t column = x%width;
-    uint8_t* baseAdress = source_plane+line*stride + byteSample*column;
+    // the byte offset added to the address as an integer: SPIRV-Cross (MoltenVK) mistranslates byte-pointer arithmetic
+    uint8_t* baseAdress = (uint8_t*)((uint64_t)source_plane + line*stride + byteSample*column);
     
     //no misalignement possible
     if (byteSample == 1){
