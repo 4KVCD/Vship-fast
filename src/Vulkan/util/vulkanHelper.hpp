@@ -21,6 +21,7 @@ constexpr bool fp16Support = false;
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.h>
 #include "profiler.hpp"
+#include "metalShaders.hpp"
 
 #ifndef THROW_ERROR
 #define THROW_ERROR(STRING) throw std::runtime_error(STRING)
@@ -508,7 +509,7 @@ class VkDeviceManager{
         VkPushConstantRange constantRangeInfo{};
         constantRangeInfo.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         constantRangeInfo.offset = 0;
-        constantRangeInfo.size = 128;
+        constantRangeInfo.size = isMoltenVK ? metalShaders::negativeZeroOffset + 4 : 128;
         pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
         pipelineLayoutCreateInfo.pPushConstantRanges = &constantRangeInfo;
         if (vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout) != VK_SUCCESS){
@@ -557,9 +558,16 @@ class VkDeviceManager{
 public:
     //whether shaders may use 64-bit floats (shaderFloat64, enabled when the GPU has it)
     bool hasFloat64 = false;
+    //whether the device is MoltenVK, Vulkan on Metal: its shaders are rewritten for it (metalShaders.hpp) and its
+    //kernels get metalShaders' z pushed after their arguments
+    bool isMoltenVK = false;
     VkDeviceManager(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         queueFamily = findQueueFamilies(physicalDevice);
         transferFamily = findTransferOnlyQueueFamily(physicalDevice);
+        VkPhysicalDeviceVulkan12Properties properties12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+        VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &properties12};
+        vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
+        isMoltenVK = properties12.driverID == VK_DRIVER_ID_MOLTENVK;
         createLogicalDevice(physicalDevice);
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProps);
         initVmaAllocator(instance, physicalDevice);
@@ -834,6 +842,10 @@ public:
     //arguments should be 128 bytes allocated
     void placeKernel(VkCommandBuffer cmdbuff, VkPipeline computePipeline, uint8_t* arguments, uint64_t bl_x, uint64_t bl_y = 1, uint64_t bl_z = 1){
         vkCmdPushConstants(cmdbuff, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, arguments);
+        if (isMoltenVK){
+            const float negativeZero = -0.0f;
+            vkCmdPushConstants(cmdbuff, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, metalShaders::negativeZeroOffset, 4, &negativeZero);
+        }
         vkCmdBindPipeline(cmdbuff, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
         VSHIP_PROFILE_BEFORE_KERNEL(cmdbuff);
         vkCmdDispatch(cmdbuff, bl_x, bl_y, bl_z);

@@ -98,7 +98,10 @@ struct VshipDeviceHelper{
         for (const auto& [shaderName, entry_points] : entry_pointsPerShader) {
             //the double versions of shaders (see fp64Shader) only on GPUs with 64-bit floats
             if (shaderName.find("Fp64") != std::string::npos && !device.hasFloat64) continue;
-            VkShaderModule shaderModule = device.loadShaderModule(shaderNameToByteCode[shaderName]);
+            std::vector<char>& embedded = shaderNameToByteCode[shaderName];
+            std::vector<char> forMetal;
+            if (device.isMoltenVK) forMetal = metalShaders::rewrite(embedded, metalShaders::keepsFastMath(shaderName));
+            VkShaderModule shaderModule = device.loadShaderModule(device.isMoltenVK ? forMetal : embedded);
             //std::cout << shaderName << " " << shaderNameToByteCode[shaderName].size() << std::endl;
             for (const std::string& entry_point: entry_points){
                 cachedPipeline[shaderName + ":" + entry_point] = device.createComputePipeline(shaderModule, entry_point);
