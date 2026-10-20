@@ -1,17 +1,11 @@
 module frequencyOpsModule;
 
 // The range operations of Butteraugli's frequency separation (libjxl's butteraugli.cc)
+// libjxl's MaximumClamp: its constant and its fused multiply-add
 public float MaximumClamp_Device(float v, float maxval) {
-    const float kMul = 0.688059627878f;
-    if (v >= maxval) {
-        v -= maxval;
-        v *= kMul;
-        v += maxval;
-    } else if (v < -maxval) {
-        v += maxval;
-        v *= kMul;
-        v -= maxval;
-    }
+    const float kMul = 0.724216145665f;
+    if (v >= maxval) return fma(v - maxval, kMul, maxval);
+    if (v < -maxval) return fma(v + maxval, kMul, -maxval);
     return v;
 }
 

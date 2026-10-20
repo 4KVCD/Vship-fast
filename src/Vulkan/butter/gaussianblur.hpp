@@ -1,22 +1,33 @@
 namespace butter{
 
-void loadGaussianKernel(float* gaussiankernel, float* gaussiankernel_integral, int gaussiansize, double sigma){
-    double acc = 0;
-    gaussiankernel_integral[0] = 0;
-    for (int i = 0; i <= 2*gaussiansize; i++){
-        double val = std::exp(-(gaussiansize-i)*(gaussiansize-i)/(2*sigma*sigma))/(std::sqrt(TAU*sigma*sigma));
-        gaussiankernel[i] = val;
-        acc += val;
-        gaussiankernel_integral[i+1] = acc;
+//libjxl's ComputeKernel (lib/jxl/butteraugli/butteraugli.cc), the kernel the CPU Butteraugli blurs with: radius
+//max(1, int(2.25*sigma)), weights exp(-i*i/(2*sigma*sigma)) without normalisation. Writes the 2*radius+1 weights,
+//then weights[0..radius] times 1/(sum of the weights), as libjxl's blurs scale them (both ConvolutionWithTranspose
+//and Separable5 sum the weights in float in increasing order). Returns the radius.
+inline int loadGaussianKernel(float* out, float sigma){
+    const double scaler = -1.0 / (2.0 * sigma * sigma);
+    const float m = 2.25f;
+    const int radius = std::max<int>(1, m * std::fabs(sigma));
+    float sum = 0.0f;
+    for (int i = -radius; i <= radius; i++){
+        out[i + radius] = std::exp(scaler * i * i);
+        sum += out[i + radius];
     }
+    const float scale = 1.0f / sum;
+    for (int i = 0; i <= radius; i++){
+        out[2*radius + 1 + i] = out[i] * scale;
+    }
+    return radius;
 }
 
-//alows to precompute and reuse easily the same kernel array in gpu
+//Butteraugli's 5 kernels on the GPU: i = 0 to 4 for the sigmas 1.2, 1.564, 2.7, 3.22 and 7.156 (radii 2, 3, 6, 7
+//and 16), each in the layout loadGaussianKernel writes.
 class GaussianHandle{
     VshipDeviceHelper* deviceHelper;
     VkDeviceAddress gaussiankernel_d;
     float* staging_buffer;
-    int indices[6];
+    int indices[5];
+    int radii[5];
 public:
     //cmdBuff is preprocessing buffer
     void init(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff){
@@ -24,27 +35,21 @@ public:
         gaussiankernel_d = deviceHelper->device.mallocDevice(sizeof(float)*1024);
         staging_buffer = (float*)deviceHelper->device.mallocHost(sizeof(float)*1024);
 
-        indices[0] = 0;
-        const double sigmas[5] = {1.2, 1.56416327805, 2.7, 3.22489901262, 7.15593339443};
-        const int windowsizes[5] = {3, 4, 8, 8, 18};
-
+        //libjxl's sigmas, as floats like its Blur's argument
+        const float sigmas[5] = {1.2f, 1.56416327805f, 2.7f, 3.22489901262f, 7.15593339443f};
+        int next = 0;
         for (int i = 0; i < 5; i++){
-            const double sigma = sigmas[i];
-            const int windowsize = windowsizes[i];
-            indices[i+1] = indices[i]+4*windowsize+3;
-            loadGaussianKernel(staging_buffer+indices[i], staging_buffer+indices[i]+2*windowsize+1, windowsize, sigma);
+            indices[i] = next;
+            radii[i] = loadGaussianKernel(staging_buffer + next, sigmas[i]);
+            next += 3*radii[i] + 2;
         }
-        //now fill the preprocessing buffer to upload staging buffer to gpu memory
         deviceHelper->device.memCpyHtoD(cmdBuff, gaussiankernel_d, staging_buffer, (1024*sizeof(float)));
     }
     VkDeviceAddress get(int i){
         return gaussiankernel_d+sizeof(float)*indices[i];
     }
-    VkDeviceAddress getIntegral(int i){
-        return gaussiankernel_d+sizeof(float)*(indices[i]+2*getWindow(i)+1);
-    }
-    int getWindow(int i){
-        return ((indices[i+1]-indices[i])-3)/4;
+    int getRadius(int i){
+        return radii[i];
     }
     void destroy(){
         deviceHelper->device.freeDevice(gaussiankernel_d);
@@ -52,79 +57,26 @@ public:
     }
 };
 
-/*void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
-    const int gaussiansize = gaussianHandle.getWindow(i);
-    VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
-    VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
-
-    uint64_t wh = width*height;
-    uint64_t th_x = 256;
-    uint64_t bl_x = (wh-1)/th_x + 1;
-
-    uint64_t verticalth_x = 32;
-    uint64_t verticalth_y = 8;
-    uint64_t verticalbl_x = (width-1)/verticalth_x+1;
-    uint64_t verticalbl_y = (height-1)/verticalth_y+1;
-
-    VkPipeline horizontalPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:horizontalBlur"];
-    VkPipeline verticalPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:verticalBlur"];
-    uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, temp, mem_d, width, height, gaussianKernel, gaussianKernel_integral, gaussiansize);
-    deviceHelper->device.placeKernel(cmdBuff, horizontalPipeline, kernelArguments, bl_x, 1, 1);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {temp, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-    });
-    fillKernelArguments(0, kernelArguments, mem_d, temp, width, height, gaussianKernel, gaussianKernel_integral, gaussiansize);
-    deviceHelper->device.placeKernel(cmdBuff, verticalPipeline, kernelArguments, verticalbl_x, verticalbl_y, 1);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {temp, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-    });
-}*/
-
-//The passes placeBlur can do after the blur, writing dst and second (postOp in separableBlur.slang; windows 3, 4 and
-//18 only, and second must not be mem_d)
+//The passes placeBlur can do after the blur, writing dst and second (postOp in separableBlur.slang; second must not
+//be mem_d)
 enum BlurPostOp {
     BLUR_POST_NONE = 0,
     BLUR_POST_RESIDUAL = 1,         //second = mem_d - blur
     BLUR_POST_REMOVE_RANGES = 2,    //subarray_removerangearound0 (1.5) then removerangearound0 (0.04) on second
     BLUR_POST_SEPARATE_HF_UHF = 3,  //separateHf_Uhf of the blur and mem_d
-    //window 8 only (TiledGaussianBlur), with the weight w:
     BLUR_POST_SUBTRACT_REMOVE_RANGE = 4,  //second = mem_d - blur, then dst = RemoveRangeAroundZero(blur, w)
     BLUR_POST_SUBTRACT_AMPLIFY_RANGE = 5  //second = mem_d - blur, then dst = AmplifyRangeAroundZero(blur, w)
 };
 
+//dst = blur i of mem_d (see GaussianHandle), both passes in one kernel (separableBlur.slang, 32x64 outputs per
+//workgroup), then the pass postOp. temp is not needed: the kernel does not go through memory between its passes.
 void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, VkDeviceAddress temp, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i, VkDeviceAddress second = 0, BlurPostOp postOp = BLUR_POST_NONE, float w = 0.0f){
-    const int gaussiansize = gaussianHandle.getWindow(i);
-    VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
-    VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
-
-    //each kernel does only its own passes after the blur
-    const bool tiledPostOp = (postOp == BLUR_POST_SUBTRACT_REMOVE_RANGE || postOp == BLUR_POST_SUBTRACT_AMPLIFY_RANGE);
-    if (postOp != BLUR_POST_NONE && tiledPostOp != (gaussiansize == 8)) throw VshipError(NotSupported, __FILE__, __LINE__, "this pass after the blur is not available for this window");
-
-    VkPipeline pipeline;
+    (void)temp;
+    const std::string radius = std::to_string(gaussianHandle.getRadius(i));
+    VkPipeline pipeline = deviceHelper->cachedPipeline["separableBlur" + radius + "Butter.spv:separableBlur" + radius];
     uint8_t kernelArguments[128];
-    uint64_t bl_x, bl_y;
-    if (gaussiansize == 8){
-        //TiledGaussianBlur, 32x32 outputs per workgroup. The fused separableBlur kernel cannot replace it: its
-        //compiled code mixes fused and separate multiply-adds, and each compiler mixes them its own way.
-        pipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:TiledGaussianBlur"];
-        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, second, (int)postOp, w);
-        bl_x = ((width-1)/32+1)*((height-1)/32+1);
-        bl_y = 1;
-    } else {
-        //the windows 3, 4 and 18: both passes in one kernel (separableBlur.slang), 32x64 outputs per workgroup.
-        //0.0f is the 0 that each sum starts from.
-        const std::string window = std::to_string(gaussiansize);
-        pipeline = deviceHelper->cachedPipeline["separableBlur" + window + "Butter.spv:separableBlur" + window];
-        fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral, 0.0f, second, (int)postOp);
-        bl_x = (width-1)/32+1;
-        bl_y = (height-1)/64+1;
-    }
-    //temp is not needed: neither kernel goes through memory between its two passes
-    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
+    fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianHandle.get(i), second, (int)postOp, w);
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (width-1)/32+1, (height-1)/64+1, 1);
     std::vector<MemoryBarrierPipeline> barriers = {
         {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
@@ -132,35 +84,5 @@ void placeBlur(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDevic
     if (postOp != BLUR_POST_NONE) barriers.push_back({second, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT});
     deviceHelper->device.placeMemoryBarriers(cmdBuff, barriers);
 }
-/*void placeBlurDstNoTemp(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress dst, VkDeviceAddress mem_d, uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, int i){
-    const int gaussiansize = gaussianHandle.getWindow(i);
-    VkDeviceAddress gaussianKernel = gaussianHandle.get(i);
-    VkDeviceAddress gaussianKernel_integral = gaussianHandle.getIntegral(i);
-
-    assert(gaussiansize == 8);
-    //special gaussian blur! It doesnt even use temp
-    int64_t th_x = 16;
-    int64_t th_y = 16;
-    int64_t bl_x = (width-1)/(2*th_x)+1;
-    int64_t bl_y = (height-1)/(2*th_y)+1;
-    
-    VkPipeline tiledBlurPipeline = deviceHelper->cachedPipeline["gaussianBlurButter.spv:TiledGaussianBlur"];
-    uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, mem_d, dst, width, height, gaussianKernel, gaussianKernel_integral);
-    deviceHelper->device.placeKernel(cmdBuff, tiledBlurPipeline, kernelArguments, bl_x*bl_y, 1, 1);
-    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
-        {mem_d, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
-        {dst, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT}
-    });
-}*/
-
-//all gaussian sigmas:
-/*
-1.2
-1.56416327805
-2.7
-3.22489901262
-7.15593339443
-*/
 
 }

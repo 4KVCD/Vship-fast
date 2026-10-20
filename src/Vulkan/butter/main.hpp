@@ -56,7 +56,8 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
         placeMemset(deviceHelper, cmdBuff, block_diff_ac[c], width*height, 0);
     }
 
-    const float hf_asymmetry_ = 0.8f;
+    //libjxl's default and what its butteraugli_main tool uses (0.8 is what libjxl's encoder asks for)
+    const float hf_asymmetry_ = 1.0f;
 
     const float wUhfMalta = 1.10039032555f;
     const float norm1Uhf = 71.7800275169f;

@@ -3,514 +3,310 @@
 groupshared float diffs[24*24]; //4 around each border. 24*24 = 1.5² * 16*16 -> around 2.25 values per thread. Note that we can pad in advance with negligible register cost
 //shared memory cost: 24*24 = 576 -> 2kB (very small in front of 16kB)
 
-//maltaUnit functions are copy pasted from google butteraugli
-float MaltaUnitLF(uint64_t offset) {
-    float retval = 0.0f;
-    {
-        // x grows, y constant
-        float sum =
-            diffs[offset-4] +
-            diffs[offset-2] +
-            diffs[offset+0] +
-            diffs[offset+2] +
-            diffs[offset+4];
-        retval += sum * sum;
-    }
-    {
-        // y grows, x constant
-        float sum =
-            diffs[offset-72 - 24] +
-            diffs[offset-24 - 24] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24] +
-            diffs[offset+72 + 24];
-        retval += sum * sum;
-    }
-    {
-        // both grow
-        float sum =
-            diffs[offset-72 - 3] +
-            diffs[offset-24 - 24 - 2] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 + 2] +
-            diffs[offset+72 + 3];
-        retval += sum * sum;
-    }
-    {
-        // y grows, x shrinks
-        float sum =
-            diffs[offset-72 + 3] +
-            diffs[offset-24 - 24 + 2] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 - 2] +
-            diffs[offset+72 - 3];
-        retval += sum * sum;
-    }
-    {
-        // y grows -4 to 4, x shrinks 1 -> -1
-        float sum =
-            diffs[offset-72 - 24 + 1] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 + 24 - 1];
-        retval += sum * sum;
-    }
-    {
-        //  y grows -4 to 4, x grows -1 -> 1
-        float sum =
-            diffs[offset-72 - 24 - 1] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 24 + 1];
-        retval += sum * sum;
-    }
-    {
-        // x grows -4 to 4, y grows -1 to 1
-        float sum =
-            diffs[offset-4 - 24] +
-            diffs[offset-2 - 24] +
-            diffs[offset+0] +
-            diffs[offset+2 + 24] +
-            diffs[offset+4 + 24];
-        retval += sum * sum;
-    }
-    {
-        // x grows -4 to 4, y shrinks 1 to -1
-        float sum =
-            diffs[offset-4 + 24] +
-            diffs[offset-2 + 24] +
-            diffs[offset+0] +
-            diffs[offset+2 - 24] +
-            diffs[offset+4 - 24];
-        retval += sum * sum;
-    }
-    {
-        /* 0_________
-        1__*______
-        2___*_____
-        3_________
-        4____0____
-        5_________
-        6_____*___
-        7______*__
-        8_________ */
-        float sum =
-            diffs[offset-72 - 2] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 2];
-        retval += sum * sum;
-    }
-    {
-        /* 0_________
-        1______*__
-        2_____*___
-        3_________
-        4____0____
-        5_________
-        6___*_____
-        7__*______
-        8_________ */
-        float sum =
-            diffs[offset-72 + 2] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 - 2];
-        retval += sum * sum;
-    }
-    {
-        /* 0_________
-        1_________
-        2_*_______
-        3__*______
-        4____0____
-        5______*__
-        6_______*_
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 - 3] +
-            diffs[offset-24 - 2] +
-            diffs[offset+0] +
-            diffs[offset+24 + 2] +
-            diffs[offset+24 + 24 + 3];
-        retval += sum * sum;
-    }
-    {
-        /* 0_________
-        1_________
-        2_______*_
-        3______*__
-        4____0____
-        5__*______
-        6_*_______
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 + 3] +
-            diffs[offset-24 + 2] +
-            diffs[offset+0] +
-            diffs[offset+24 - 2] +
-            diffs[offset+24 + 24 - 3];
-        retval += sum * sum;
-    }
-    {
-        /* 0_________
-        1_________
-        2________*
-        3______*__
-        4____0____
-        5__*______
-        6*________
-        7_________
-        8_________ */
+// One diffs value of the tile, dy rows and dx columns away from index o
+float tap(int o, int dy, int dx) { return diffs[o + dy*24 + dx]; }
 
-        float sum =
-            diffs[offset+24 + 24 - 4] +
-            diffs[offset+24 - 2] +
-            diffs[offset+0] +
-            diffs[offset-24 + 2] +
-            diffs[offset-24 - 24 + 4];
-        retval += sum * sum;
-    }
+// The sum of the squared sums along 16 short lines through the pixel at index o: libjxl's MaltaUnit
+// (lib/jxl/butteraugli/butteraugli.cc) with its lines, the order it adds their taps in and its fma.
+// MaltaUnitLF's lines have 5 taps, MaltaUnit's 7 or 9.
+float MaltaUnitLF(int o) {
+    float retval;
+    // x grows, y constant
     {
-        /* 0_________
-        1_________
-        2*________
-        3__*______
-        4____0____
-        5______*__
-        6________*
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 - 4] +
-            diffs[offset-24 - 2] +
-            diffs[offset+0] +
-            diffs[offset+24 + 2] +
-            diffs[offset+24 + 24 + 4];
-        retval += sum * sum;
+        const float sum = (tap(o, 0, -4) + tap(o, 0, -2)) + (tap(o, 0, 0) + (tap(o, 0, 2) + tap(o, 0, 4)));
+        retval = sum*sum;
     }
+    // y grows, x constant
     {
-        /* 0__*______
-        1_________
-        2___*_____
-        3_________
-        4____0____
-        5_________
-        6_____*___
-        7_________
-        8______*__ */
-        float sum =
-            diffs[offset-72 - 24 - 2] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 24 + 2];
-        retval += sum * sum;
+        const float sum = (tap(o, -4, 0) + tap(o, -2, 0)) + (tap(o, 0, 0) + (tap(o, 2, 0) + tap(o, 4, 0)));
+        retval = fma(sum, sum, retval);
     }
+    // both grow
     {
-        /* 0______*__
-        1_________
-        2_____*___
-        3_________
-        4____0____
-        5_________
-        6___*_____
-        7_________
-        8__*______ */
-        float sum =
-            diffs[offset-72 - 24 + 2] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 + 24 - 2];
-        retval += sum * sum;
+        const float sum = (tap(o, -3, -3) + tap(o, -2, -2)) + (tap(o, 0, 0) + (tap(o, 2, 2) + tap(o, 3, 3)));
+        retval = fma(sum, sum, retval);
+    }
+    // y grows, x shrinks
+    {
+        const float sum = (tap(o, -3, 3) + tap(o, -2, 2)) + (tap(o, 0, 0) + (tap(o, 2, -2) + tap(o, 3, -3)));
+        retval = fma(sum, sum, retval);
+    }
+    // y grows -4 to 4, x shrinks 1 -> -1
+    {
+        const float sum = (tap(o, -4, 1) + tap(o, -2, 1)) + (tap(o, 0, 0) + (tap(o, 2, -1) + tap(o, 4, -1)));
+        retval = fma(sum, sum, retval);
+    }
+    //  y grows -4 to 4, x grows -1 -> 1
+    {
+        const float sum = (tap(o, -4, -1) + tap(o, -2, -1)) + (tap(o, 0, 0) + (tap(o, 2, 1) + tap(o, 4, 1)));
+        retval = fma(sum, sum, retval);
+    }
+    // x grows -4 to 4, y grows -1 to 1
+    {
+        const float sum = (tap(o, -1, -4) + tap(o, -1, -2)) + (tap(o, 0, 0) + (tap(o, 1, 2) + tap(o, 1, 4)));
+        retval = fma(sum, sum, retval);
+    }
+    // x grows -4 to 4, y shrinks 1 to -1
+    {
+        const float sum = (tap(o, 1, -4) + tap(o, 1, -2)) + (tap(o, 0, 0) + (tap(o, -1, 2) + tap(o, -1, 4)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1__*______
+       2___*_____
+       3_________
+       4____0____
+       5_________
+       6_____*___
+       7______*__
+       8_________ */
+    {
+        const float sum = (tap(o, -3, -2) + tap(o, -2, -1)) + (tap(o, 0, 0) + (tap(o, 2, 1) + tap(o, 3, 2)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1______*__
+       2_____*___
+       3_________
+       4____0____
+       5_________
+       6___*_____
+       7__*______
+       8_________ */
+    {
+        const float sum = (tap(o, -3, 2) + tap(o, -2, 1)) + (tap(o, 0, 0) + (tap(o, 2, -1) + tap(o, 3, -2)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1_________
+       2_*_______
+       3__*______
+       4____0____
+       5______*__
+       6_______*_
+       7_________
+       8_________ */
+    {
+        const float sum = (tap(o, -2, -3) + tap(o, -1, -2)) + (tap(o, 0, 0) + (tap(o, 1, 2) + tap(o, 2, 3)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1_________
+       2_______*_
+       3______*__
+       4____0____
+       5__*______
+       6_*_______
+       7_________
+       8_________ */
+    {
+        const float sum = (tap(o, -2, 3) + tap(o, -1, 2)) + (tap(o, 0, 0) + (tap(o, 1, -2) + tap(o, 2, -3)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1_________
+       2________*
+       3______*__
+       4____0____
+       5__*______
+       6*________
+       7_________
+       8_________ */
+    {
+        const float sum = (tap(o, 2, -4) + tap(o, 1, -2)) + (tap(o, 0, 0) + (tap(o, -1, 2) + tap(o, -2, 4)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0_________
+       1_________
+       2*________
+       3__*______
+       4____0____
+       5______*__
+       6________*
+       7_________
+       8_________ */
+    {
+        const float sum = (tap(o, -2, -4) + tap(o, -1, -2)) + (tap(o, 0, 0) + (tap(o, 1, 2) + tap(o, 2, 4)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0__*______
+       1_________
+       2___*_____
+       3_________
+       4____0____
+       5_________
+       6_____*___
+       7_________
+       8______*__ */
+    {
+        const float sum = (tap(o, -4, -2) + tap(o, -2, -1)) + (tap(o, 0, 0) + (tap(o, 2, 1) + tap(o, 4, 2)));
+        retval = fma(sum, sum, retval);
+    }
+    /* 0______*__
+       1_________
+       2_____*___
+       3_________
+       4____0____
+       5_________
+       6___*_____
+       7_________
+       8__*______ */
+    {
+        const float sum = (tap(o, -4, 2) + tap(o, -2, 1)) + (tap(o, 0, 0) + (tap(o, 2, -1) + tap(o, 4, -2)));
+        retval = fma(sum, sum, retval);
     }
     return retval;
 }
 
-float MaltaUnit(uint64_t offset) {
-    float retval = 0.0f;
+float MaltaUnit(int o) {
+    float retval;
+    // x grows, y constant
     {
-        // x grows, y constant
-        float sum =
-            diffs[offset-4] +
-            diffs[offset-3] +
-            diffs[offset-2] +
-            diffs[offset-1] +
-            diffs[offset+0] +
-            diffs[offset+1] +
-            diffs[offset+2] +
-            diffs[offset+3] +
-            diffs[offset+4];
-        retval += sum * sum;
+        const float sum = (((tap(o, 0, -4) + tap(o, 0, -3)) + (tap(o, 0, -2) + tap(o, 0, -1))) + ((tap(o, 0, 0) + tap(o, 0, 1)) + (tap(o, 0, 2) + tap(o, 0, 3)))) + tap(o, 0, 4);
+        retval = sum*sum;
     }
+    // y grows, x constant
     {
-        // y grows, x constant
-        float sum =
-            diffs[offset-72 - 24] +
-            diffs[offset-72] +
-            diffs[offset-24 - 24] +
-            diffs[offset-24] +
-            diffs[offset+0] +
-            diffs[offset+24] +
-            diffs[offset+24 + 24] +
-            diffs[offset+72] +
-            diffs[offset+72 + 24];
-        retval += sum * sum;
+        const float sum = (((tap(o, -4, 0) + tap(o, -3, 0)) + (tap(o, -2, 0) + tap(o, -1, 0))) + ((tap(o, 0, 0) + tap(o, 1, 0)) + (tap(o, 2, 0) + tap(o, 3, 0)))) + tap(o, 4, 0);
+        retval = fma(sum, sum, retval);
     }
+    // both grow
     {
-        // both grow
-        float sum =
-            diffs[offset-72 - 3] +
-            diffs[offset-24 - 24 - 2] +
-            diffs[offset-24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 1] +
-            diffs[offset+24 + 24 + 2] +
-            diffs[offset+72 + 3];
-        retval += sum * sum;
+        const float sum = (tap(o, -3, -3) + tap(o, -2, -2)) + (tap(o, -1, -1) + ((tap(o, 0, 0) + tap(o, 1, 1)) + (tap(o, 2, 2) + tap(o, 3, 3))));
+        retval = fma(sum, sum, retval);
     }
+    // y grows, x shrinks
     {
-        // y grows, x shrinks
-        float sum =
-            diffs[offset-72 + 3] +
-            diffs[offset-24 - 24 + 2] +
-            diffs[offset-24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 - 1] +
-            diffs[offset+24 + 24 - 2] +
-            diffs[offset+72 - 3];
-        retval += sum * sum;
+        const float sum = (tap(o, -3, 3) + tap(o, -2, 2)) + (tap(o, -1, 1) + ((tap(o, 0, 0) + tap(o, 1, -1)) + (tap(o, 2, -2) + tap(o, 3, -3))));
+        retval = fma(sum, sum, retval);
     }
+    // y grows -4 to 4, x shrinks 1 -> -1
     {
-        // y grows -4 to 4, x shrinks 1 -> -1
-        float sum =
-            diffs[offset-72 - 24 + 1] +
-            diffs[offset-72 + 1] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset-24] +
-            diffs[offset+0] +
-            diffs[offset+24] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 - 1] +
-            diffs[offset+72 + 24 - 1];
-        retval += sum * sum;
+        const float sum = (((tap(o, -4, 1) + tap(o, -3, 1)) + (tap(o, -2, 1) + tap(o, -1, 0))) + ((tap(o, 0, 0) + tap(o, 1, 0)) + (tap(o, 2, -1) + tap(o, 3, -1)))) + tap(o, 4, -1);
+        retval = fma(sum, sum, retval);
     }
+    //  y grows -4 to 4, x grows -1 -> 1
     {
-        //  y grows -4 to 4, x grows -1 -> 1
-        float sum =
-            diffs[offset-72 - 24 - 1] +
-            diffs[offset-72 - 1] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset-24] +
-            diffs[offset+0] +
-            diffs[offset+24] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 1] +
-            diffs[offset+72 + 24 + 1];
-        retval += sum * sum;
+        const float sum = (((tap(o, -4, -1) + tap(o, -3, -1)) + (tap(o, -2, -1) + tap(o, -1, 0))) + ((tap(o, 0, 0) + tap(o, 1, 0)) + (tap(o, 2, 1) + tap(o, 3, 1)))) + tap(o, 4, 1);
+        retval = fma(sum, sum, retval);
     }
+    // x grows -4 to 4, y grows -1 to 1
     {
-        // x grows -4 to 4, y grows -1 to 1
-        float sum =
-            diffs[offset-4 - 24] +
-            diffs[offset-3 - 24] +
-            diffs[offset-2 - 24] +
-            diffs[offset-1] +
-            diffs[offset+0] +
-            diffs[offset+1] +
-            diffs[offset+2 + 24] +
-            diffs[offset+3 + 24] +
-            diffs[offset+4 + 24];
-        retval += sum * sum;
+        const float sum = (((tap(o, -1, -4) + tap(o, -1, -3)) + (tap(o, -1, -2) + tap(o, 0, -1))) + ((tap(o, 0, 0) + tap(o, 0, 1)) + (tap(o, 1, 2) + tap(o, 1, 3)))) + tap(o, 1, 4);
+        retval = fma(sum, sum, retval);
     }
+    // x grows -4 to 4, y shrinks 1 to -1
     {
-        // x grows -4 to 4, y shrinks 1 to -1
-        float sum =
-            diffs[offset-4 + 24] +
-            diffs[offset-3 + 24] +
-            diffs[offset-2 + 24] +
-            diffs[offset-1] +
-            diffs[offset+0] +
-            diffs[offset+1] +
-            diffs[offset+2 - 24] +
-            diffs[offset+3 - 24] +
-            diffs[offset+4 - 24];
-        retval += sum * sum;
+        const float sum = (((tap(o, 1, -4) + tap(o, 1, -3)) + (tap(o, 1, -2) + tap(o, 0, -1))) + ((tap(o, 0, 0) + tap(o, 0, 1)) + (tap(o, -1, 2) + tap(o, -1, 3)))) + tap(o, -1, 4);
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1__*______
+       2___*_____
+       3___*_____
+       4____0____
+       5_____*___
+       6_____*___
+       7______*__
+       8_________ */
     {
-        /* 0_________
-        1__*______
-        2___*_____
-        3___*_____
-        4____0____
-        5_____*___
-        6_____*___
-        7______*__
-        8_________ */
-        float sum =
-            diffs[offset-72 - 2] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset-24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 1] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 2];
-        retval += sum * sum;
+        const float sum = (tap(o, -3, -2) + tap(o, -2, -1)) + (tap(o, -1, -1) + ((tap(o, 0, 0) + tap(o, 1, 1)) + (tap(o, 2, 1) + tap(o, 3, 2))));
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1______*__
+       2_____*___
+       3_____*___
+       4____0____
+       5___*_____
+       6___*_____
+       7__*______
+       8_________ */
     {
-        /* 0_________
-        1______*__
-        2_____*___
-        3_____*___
-        4____0____
-        5___*_____
-        6___*_____
-        7__*______
-        8_________ */
-        float sum =
-            diffs[offset-72 + 2] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset-24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 - 1] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 - 2];
-        retval += sum * sum;
+        const float sum = (tap(o, -3, 2) + tap(o, -2, 1)) + (tap(o, -1, 1) + ((tap(o, 0, 0) + tap(o, 1, -1)) + (tap(o, 2, -1) + tap(o, 3, -2))));
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1_________
+       2_*_______
+       3__**_____
+       4____0____
+       5_____**__
+       6_______*_
+       7_________
+       8_________ */
     {
-        /* 0_________
-        1_________
-        2_*_______
-        3__**_____
-        4____0____
-        5_____**__
-        6_______*_
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 - 3] +
-            diffs[offset-24 - 2] +
-            diffs[offset-24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24 + 1] +
-            diffs[offset+24 + 2] +
-            diffs[offset+24 + 24 + 3];
-        retval += sum * sum;
+        const float sum = (tap(o, -2, -3) + tap(o, -1, -2)) + (tap(o, -1, -1) + ((tap(o, 0, 0) + tap(o, 1, 1)) + (tap(o, 1, 2) + tap(o, 2, 3))));
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1_________
+       2_______*_
+       3_____**__
+       4____0____
+       5__**_____
+       6_*_______
+       7_________
+       8_________ */
     {
-        /* 0_________
-        1_________
-        2_______*_
-        3_____**__
-        4____0____
-        5__**_____
-        6_*_______
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 + 3] +
-            diffs[offset-24 + 2] +
-            diffs[offset-24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24 - 1] +
-            diffs[offset+24 - 2] +
-            diffs[offset+24 + 24 - 3];
-        retval += sum * sum;
+        const float sum = (tap(o, -2, 3) + tap(o, -1, 2)) + (tap(o, -1, 1) + ((tap(o, 0, 0) + tap(o, 1, -1)) + (tap(o, 1, -2) + tap(o, 2, -3))));
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1_________
+       2_________
+       3______***
+       4___*0*___
+       5***______
+       6_________
+       7_________
+       8_________ */
     {
-        /* 0_________
-        1_________
-        2_________
-        3______**_
-        4____0*___
-        5__**_____
-        6**_______
-        7_________
-        8_________ */
-
-        float sum =
-            diffs[offset+24 + 24 - 4] +
-            diffs[offset+24 + 24 - 3] +
-            diffs[offset+24 - 2] +
-            diffs[offset+24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+1] +
-            diffs[offset-24 + 2] +
-            diffs[offset-24 + 3];
-        retval += sum * sum;
+        const float sum = (((tap(o, 1, -4) + tap(o, 1, -3)) + (tap(o, 1, -2) + tap(o, 0, -1))) + ((tap(o, 0, 0) + tap(o, 0, 1)) + (tap(o, -1, 2) + tap(o, -1, 3)))) + tap(o, -1, 4);
+        retval = fma(sum, sum, retval);
     }
+    /* 0_________
+       1_________
+       2_________
+       3***______
+       4___*0*___
+       5______***
+       6_________
+       7_________
+       8_________ */
     {
-        /* 0_________
-        1_________
-        2**_______
-        3__**_____
-        4____0*___
-        5______**_
-        6_________
-        7_________
-        8_________ */
-        float sum =
-            diffs[offset-24 - 24 - 4] +
-            diffs[offset-24 - 24 - 3] +
-            diffs[offset-24 - 2] +
-            diffs[offset-24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+1] +
-            diffs[offset+24 + 2] +
-            diffs[offset+24 + 3];
-        retval += sum * sum;
+        const float sum = (((tap(o, -1, -4) + tap(o, -1, -3)) + (tap(o, -1, -2) + tap(o, 0, -1))) + ((tap(o, 0, 0) + tap(o, 0, 1)) + (tap(o, 1, 2) + tap(o, 1, 3)))) + tap(o, 1, 4);
+        retval = fma(sum, sum, retval);
     }
+    /* 0___*_____
+       1___*_____
+       2___*_____
+       3____*____
+       4____0____
+       5____*____
+       6_____*___
+       7_____*___
+       8_____*___ */
     {
-        /* 0__*______
-        1__*______
-        2___*_____
-        3___*_____
-        4____0____
-        5____*____
-        6_____*___
-        7_____*___
-        8_________ */
-        float sum =
-            diffs[offset-72 - 24 - 2] +
-            diffs[offset-72 - 2] +
-            diffs[offset-24 - 24 - 1] +
-            diffs[offset-24 - 1] +
-            diffs[offset+0] +
-            diffs[offset+24] +
-            diffs[offset+24 + 24 + 1] +
-            diffs[offset+72 + 1];
-        retval += sum * sum;
+        const float sum = (((tap(o, -4, -1) + tap(o, -3, -1)) + (tap(o, -2, -1) + tap(o, -1, 0))) + ((tap(o, 0, 0) + tap(o, 1, 0)) + (tap(o, 2, 1) + tap(o, 3, 1)))) + tap(o, 4, 1);
+        retval = fma(sum, sum, retval);
     }
+    /* 0_____*___
+       1_____*___
+       2____ *___
+       3____*____
+       4____0____
+       5____*____
+       6___*_____
+       7___*_____
+       8___*_____ */
     {
-        /* 0______*__
-        1______*__
-        2_____*___
-        3_____*___
-        4____0____
-        5____*____
-        6___*_____
-        7___*_____
-        8_________ */
-        float sum =
-            diffs[offset-72 - 24 + 2] +
-            diffs[offset-72 + 2] +
-            diffs[offset-24 - 24 + 1] +
-            diffs[offset-24 + 1] +
-            diffs[offset+0] +
-            diffs[offset+24] +
-            diffs[offset+24 + 24 - 1] +
-            diffs[offset+72 - 1];
-        retval += sum * sum;
+        const float sum = (((tap(o, -4, 1) + tap(o, -3, 1)) + (tap(o, -2, 1) + tap(o, -1, 0))) + ((tap(o, 0, 0) + tap(o, 1, 0)) + (tap(o, 2, -1) + tap(o, 3, -1)))) + tap(o, 4, -1);
+        retval = fma(sum, sum, retval);
     }
     return retval;
 }
+
 
 [shader("compute")]
 [numthreads(16, 16, 1)]
@@ -579,7 +375,7 @@ void MaltaDiffMap(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupI
 
     //printf("local diffs : %f at %d\n", diffs[(threadIdx.y+4)*24 + threadIdx.x+4], (threadIdx.y+4)*24 + threadIdx.x+4);
 
-    float result = MaltaUnit((threadIdx.y+4)*24 + threadIdx.x+4);
+    float result = MaltaUnit((int)((threadIdx.y+4)*24 + threadIdx.x+4));
     if (x < width && y < height){
         block_diff_ac[y*width + x] += result;
     }
@@ -650,7 +446,7 @@ void MaltaDiffMapLF(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Grou
     }
     GroupMemoryBarrierWithGroupSync(); //diffs is loaded
 
-    float result = MaltaUnitLF((threadIdx.y+4)*24 + threadIdx.x+4);
+    float result = MaltaUnitLF((int)((threadIdx.y+4)*24 + threadIdx.x+4));
     if (x < width && y < height){
         block_diff_ac[y*width + x] += result;
     }

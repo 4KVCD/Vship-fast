@@ -12,9 +12,11 @@ float SuppressUhfInBrightAreas_Device(float hf, float brightness, float mul, flo
     return hf * scaler;
 }
 
+// libjxl's SuppressXByY: its constant 1 - s and its two fused multiply-adds
 float supressXbyY_Device(float x, float yval, float yw){
     const float s = 0.653020556257f;
-    const float scaler = s + (yw * (1.0f - s)) / (yw + yval * yval);
+    const float oneMinusS = 0.346979443743f;
+    const float scaler = fma(yw / fma(yval, yval, yw), oneMinusS, s);
     return x * scaler;
 }
 
