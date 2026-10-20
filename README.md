@@ -4,7 +4,8 @@
 than upstream for Butteraugli, 1.6-2.4x for CVVDP and up to 1.6x for SSIMULACRA2, and makes all three match their
 reference implementations: Butteraugli bit-identical to libjxl, SSIMULACRA2 to libjxl within 1e-7 points, CVVDP to
 pycvvdp to 5 decimals. The speed changes leave the output bit-identical, on NVIDIA and AMD
-([details](#how-the-output-is-checked)).**
+([details](#how-the-output-is-checked)). It also runs on Apple GPUs through MoltenVK, where Butteraugli is 1.7-1.8x
+and CVVDP 1.4-1.5x faster than upstream ([Apple](#apple-gpus-moltenvk)).**
 
 **Only the Vulkan backend is optimized and changed.** The HIP/CUDA backend is upstream's, with upstream's speed
 and scores.
@@ -30,6 +31,26 @@ at 1080p (8 frames) and HoneyBee at 4K (6 frames), 8-bit 4:2:0. Threads: frames 
 SSIMULACRA2 does more work than upstream: matching libjxl means running libjxl's recursive blur, which is serial
 along every row and column. That alone made it 2.8-4.4x slower; the speed work won it back and more.
 
+### Apple GPUs (MoltenVK)
+
+MacBook Pro with an M1 Pro (14-core GPU), macOS 27.0.1, MoltenVK 1.4.2, frames per second, median of 3 runs.
+Upstream is e99aac2 with the minimal fixes it needs to run there (see [Bug fixes](#bug-fixes)), timed in an earlier
+run than the fork (timed at bc4d18e; ba0829c runs the same code on MoltenVK). Clips: **not** the clips above, but stand-ins cut from a 4K film, 1920x1080 (8 frames)
+and 3840x2160 (6 frames), encoded with x264 at crf 34, 8-bit 4:2:0, so these numbers do not compare with the RTX
+3070's.
+
+| Metric | Threads | 1080p upstream | 1080p fork | | 4K upstream | 4K fork | |
+|---|---|---|---|---|---|---|---|
+| Butteraugli | 1 | 13.42 | 22.23 | **1.66x** | 3.47 | 6.19 | **1.78x** |
+| Butteraugli | 3 | 13.23 | 22.02 | **1.66x** | 3.42 | 6.06 | **1.77x** |
+| SSIMULACRA2 | 1 | 65.91 | 55.31 | **0.84x** | 17.79 | 15.43 | **0.87x** |
+| SSIMULACRA2 | 3 | 65.82 | 55.79 | **0.85x** | 17.24 | 14.59 | **0.85x** |
+| CVVDP | 1 | 27.24 | 39.80 | **1.46x** | 7.23 | 9.93 | **1.37x** |
+| CVVDP | 3 | 26.56 | 38.32 | **1.44x** | 6.69 | 9.07 | **1.36x** |
+
+SSIMULACRA2 is slower than upstream on Apple: besides libjxl's serial blur, its input kernels need Metal's safe math
+to keep libjxl's rounding, which costs about 10% there. Three threads do not help on this GPU.
+
 ## Accuracy against the reference implementations
 
 | Metric | Reference | Upstream | Fork |
@@ -49,6 +70,11 @@ pixels in tens of millions can be 1 ulp off. YUV input with the BT.709, PQ or HL
 `pow()`, so its conversion can differ by a few ulps between GPU vendors, and the scores with it; RGB input converted
 with libjxl's arithmetic does not.
 
+Across GPUs, on a synthetic clip: the M1 Pro's scores differ from the RTX 3070's by about as much as the Radeon 8060S's
+do (up to 0.006 SSIMULACRA2 points and 16 ulp in Butteraugli's max norm on YUV input, from the GPUs' `pow()`). With
+RGB input, which takes no `pow()`, SSIMULACRA2 and Butteraugli's 3-norm and max norm are identical on all three GPUs;
+Butteraugli's Q-norm (computed with `pow()`) and CVVDP are within 2 ulp. Apple GPUs have no 64-bit floats.
+
 ## What changed
 
 ### Accuracy (scores change on purpose)
@@ -65,7 +91,12 @@ with libjxl's arithmetic does not.
 - **Input conversion** for SSIMULACRA2 and Butteraugli uses libjxl's arithmetic.
 - **Rounding:** every float operation of every shader is marked NoContraction when the library is built, so no GPU
   compiler fuses multiply-adds on its own. The fused multiply-adds a metric needs are explicit. This costs 1-3% on
-  an RTX 3070 and nothing measurable on a Radeon 8060S.
+  an RTX 3070 and nothing measurable on a Radeon 8060S. MoltenVK turns each mark into a call Metal cannot optimise
+  (3-5x slower on an M1 Pro, and CVVDP's scores broke under Metal's fast math), so there the shaders are rewritten as
+  they load: every product a*b becomes fma(a, b, z), with z a -0.0 known only when the kernel runs, which rounds
+  like a*b and leaves nothing to fuse; Metal's fast math is off except in CVVDP's kernels and the YUV-to-RGB step.
+  Other GPUs load the shaders unchanged. The host code is built with `-ffp-contract=off`, so ARM CPUs round it like
+  x86-64.
 
 ### Speed (output unchanged)
 
@@ -92,7 +123,11 @@ Each commit message gives its own speedup and how it was checked.
   ([#22](https://codeberg.org/Line-fr/Vship/pulls/22)), a distortion-map overflow with padded strides
   ([#26](https://codeberg.org/Line-fr/Vship/issues/26)) and the out-of-bounds read above
   ([#25](https://codeberg.org/Line-fr/Vship/issues/25)), all included here; failing pipelines on macOS
-  ([#27](https://codeberg.org/Line-fr/Vship/issues/27)), fixed upstream after e99aac2 and not included here.
+  ([#27](https://codeberg.org/Line-fr/Vship/issues/27)), fixed upstream after e99aac2 and here independently.
+- MoltenVK: besides #27's byte-address arithmetic, SPIRV-Cross mistranslated CVVDP's pooling jobs and a variable
+  named `thread` (a Metal keyword). Several handlers at once lost the device there, upstream too: MoltenVK keeps
+  every buffer resident in every command buffer, so a buffer freed while another thread computed failed its work;
+  on MoltenVK a buffer is now freed only once the queues are idle.
 
 ## How the output is checked
 
@@ -102,7 +137,9 @@ of 27 input formats (bit depths, ranges, chroma layouts, odd sizes, matrices, tr
 and the last ones with padded input lines. All were identical. On a Radeon 8060S, the accuracy baseline before any
 speed work and the last speed commit give identical output, apart from the bug fixes above, once both are built
 with NoContraction (before it, four early commits rounded slightly differently on AMD). The Butteraugli exactness
-work that followed was checked pixel by pixel against libjxl on both GPUs. The speed and output-check tools are in
+work that followed was checked pixel by pixel against libjxl on both GPUs. The Apple commits leave the output and
+speed of the RTX 3070 and the Radeon 8060S unchanged, and give the same output on the M1 Pro in repeated runs. The
+speed and output-check tools are in
 [`perf-tools/`](perf-tools/); they are test tools, not part of the library.
 
 ## Branch
@@ -115,7 +152,7 @@ commits, including upstream's own versions of some of these fixes, are not merge
 
 As for upstream Vship: see the [original README](#vship--fast-metric-computation-on-gpu) below and the
 [docs](doc/). The C API is unchanged. On GPUs with 64-bit floats Vship now enables them (shaderFloat64) for
-Butteraugli's rare double-precision fallback.
+Butteraugli's rare double-precision fallback. On macOS it runs through MoltenVK (tested with 1.4.2).
 
 The work was done by 4KVCD with [Claude Code](https://claude.com/claude-code). The fork keeps Vship's
 [license](LICENSE), which forbids using the code to train machine learning models.
