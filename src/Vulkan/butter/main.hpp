@@ -22,8 +22,9 @@
 
 namespace butter{
 
-//returns the address to which the diffmap is planned to be
-VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle){
+//returns the address to which the diffmap is planned to be. When halfScales is given, the opsin dynamics kernel also
+//writes each image's half scale (3 planes one after the other) at halfScales[0] and halfScales[1].
+VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle, const VkDeviceAddress* halfScales = nullptr){
     //Psycho Image planes
 
     VkDeviceAddress temp[3] = {mem_d, mem_d+sizeof(float)*1*width*height, mem_d+sizeof(float)*2*width*height};
@@ -40,8 +41,8 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
 
     //to XYB, into mf1 and mf2: the opsin dynamics kernel cannot write over its source, and the medium frequencies are
     //written channel by channel, each after the separation has read that channel of the XYB image
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, mf1, width, height, gaussianHandle, intensity_multiplier);
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, mf2, width, height, gaussianHandle, intensity_multiplier);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, mf1, width, height, gaussianHandle, intensity_multiplier, (halfScales != nullptr) ? halfScales[0] : 0);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, mf2, width, height, gaussianHandle, intensity_multiplier, (halfScales != nullptr) ? halfScales[1] : 0);
 
     placeSeparateFrequencies(deviceHelper, cmdBuff, mf1, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
     placeSeparateFrequencies(deviceHelper, cmdBuff, mf2, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);
@@ -117,7 +118,7 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
 
 //expects linear planar RGB as input, mem_d must contain 25 planes (srcs are rewritten so they are unusable after execution)
 VkDeviceAddress placeGetmultiscalediffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle){
-    //computing downscaled before we overwrite src in getdiffmap (it s better for memory)
+    //the half scale, written by the full scale's opsin dynamics kernel before getdiffmap overwrites src
     uint64_t nwidth = (width-1)/2+1;
     uint64_t nheight = (height-1)/2+1;
     VkDeviceAddress nmem_d = mem_d; //allow usage up to mem_d+2*width*height;
@@ -125,12 +126,8 @@ VkDeviceAddress placeGetmultiscalediffmap(VshipDeviceHelper* deviceHelper, VkCom
     VkDeviceAddress nsrc2_d[3] = {nmem_d+sizeof(float)*3*nwidth*nheight, nmem_d+sizeof(float)*4*nwidth*nheight, nmem_d+sizeof(float)*5*nwidth*nheight};
 
     //using 6 smaller planes is equivalent to 1.5 standard planes, so it fits within the 2 planes given here!)
-    for (int i = 0; i < 3; i++){
-        placeDownsample(deviceHelper, cmdBuff, src1_d[i], nsrc1_d[i], width, height);
-        placeDownsample(deviceHelper, cmdBuff, src2_d[i], nsrc2_d[i], width, height);
-    }
-
-    VkDeviceAddress diffmap = placeGetdiffmap(deviceHelper, cmdBuff, src1_d, src2_d, mem_d+sizeof(float)*2*width*height, width, height, intensity_multiplier, gaussianHandle);
+    const VkDeviceAddress halfScales[2] = {nsrc1_d[0], nsrc2_d[0]};
+    VkDeviceAddress diffmap = placeGetdiffmap(deviceHelper, cmdBuff, src1_d, src2_d, mem_d+sizeof(float)*2*width*height, width, height, intensity_multiplier, gaussianHandle, halfScales);
     //diffmap is stored at mem_d+8*width*height so we can build after that the second smaller scale
     //smaller scale now
     nmem_d = mem_d+sizeof(float)*3*width*height;

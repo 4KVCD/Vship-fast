@@ -15,7 +15,8 @@
 //   multiplication, whose result differs from fma(a, k, +0) when a*k is -0.
 //
 // For window 3, opsinDynamicsBlur blurs the 3 planes of an image the same way and computes the opsin dynamics from
-// them (opsinModule.slang), each blurred value through opaque() as it came from memory before.
+// them (opsinModule.slang), each blurred value through opaque() as it came from memory before. It can also write the
+// image's half scale, from the input tiles in shared memory (storeHalfScale).
 //
 // postOp makes separableBlur also do the pass that followed the blur, writing dst and second (never src: other
 // workgroups still read its tile borders). The blurred value b goes through opaque() as it went through memory:
@@ -73,34 +74,51 @@ float windowWeight(float* integral, int n, int length){
     return integral[G+end+1-n] - integral[G+begin-n];
 }
 
-// The blur of the tile at (x0, y0) of src: thread tid's COLUMN_RUN outputs, of column x0 + tid % TILE_X and rows
-// y0 + COLUMN_RUN*(tid / TILE_X) and the COLUMN_RUN-1 after (0 outside the image). Every thread of the workgroup calls
-// it, and may call it again for another plane.
-void blurTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid, float k[TAPS], float* gaussiankernel_integral, float zero, bool afterAnotherTile, out float blurred[COLUMN_RUN]){
-    const int w = (int)width;
-    const int h = (int)height;
+// Element i of the input tile is row y0 - G + i / (TILE_X + 2*G) and column x0 - G + i % (TILE_X + 2*G) of the image:
+// the tile at (x0, y0) and its halo. Thread tid holds the elements tid + m*THREADS, m < TILE_LOADS.
+int tileRow(int i){
+    return i/(TILE_X + 2*G);
+}
 
-    // the input tile: rows y0-G .. y0+TILE_Y+G-1 and columns x0-G .. x0+TILE_X+G-1, 0 outside the image. The loads
-    // are all issued before the first store, so that their waits overlap.
-    float loaded[TILE_LOADS];
+int tileColumn(int i){
+    return i - tileRow(i)*(TILE_X + 2*G);
+}
+
+// Thread tid's elements of the input tile of src, 0 outside the image. The loads are all issued before the first
+// store (storeTile), so that their waits overlap.
+void loadTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid, out float loaded[TILE_LOADS]){
     [ForceUnroll]
     for (int m = 0; m < TILE_LOADS; m++){
         const int i = tid + m*THREADS;
-        const int r = i/(TILE_X + 2*G);
-        const int c = i - r*(TILE_X + 2*G);
-        const int y = y0 - G + r;
-        const int x = x0 - G + c;
-        loaded[m] = (i < ROWS*(TILE_X + 2*G) && x >= 0 && x < w && y >= 0 && y < h) ? src[(int64_t)y*width + x] : 0.0f;
+        const int y = y0 - G + tileRow(i);
+        const int x = x0 - G + tileColumn(i);
+        loaded[m] = (i < ROWS*(TILE_X + 2*G) && x >= 0 && x < (int)width && y >= 0 && y < (int)height) ? src[(int64_t)y*width + x] : 0.0f;
     }
-    // a former call's column pass may still read the tile
+}
+
+// Puts thread tid's elements of the input tile into tile, for blurStoredTile. afterAnotherTile: a former call's
+// column pass may still read tile.
+void storeTile(int tid, float loaded[TILE_LOADS], bool afterAnotherTile){
     if (afterAnotherTile) GroupMemoryBarrierWithGroupSync();
     [ForceUnroll]
     for (int m = 0; m < TILE_LOADS; m++){
         const int i = tid + m*THREADS;
-        const int r = i/(TILE_X + 2*G);
-        if (i < ROWS*(TILE_X + 2*G)) tile[r*IN_PITCH + i - r*(TILE_X + 2*G)] = loaded[m];
+        if (i < ROWS*(TILE_X + 2*G)) tile[tileRow(i)*IN_PITCH + tileColumn(i)] = loaded[m];
     }
     GroupMemoryBarrierWithGroupSync();
+}
+
+// The input tile's pixel (x, y) of the image, in the tile at (x0, y0) or its halo, after storeTile.
+float storedTilePixel(int x0, int y0, int x, int y){
+    return tile[(y - y0 + G)*IN_PITCH + x - x0 + G];
+}
+
+// The blur of the input tile in tile (storeTile): thread tid's COLUMN_RUN outputs, of column x0 + tid % TILE_X and
+// rows y0 + COLUMN_RUN*(tid / TILE_X) and the COLUMN_RUN-1 after (0 outside the image). Every thread of the workgroup
+// calls it.
+void blurStoredTile(int64_t width, int64_t height, int x0, int y0, int tid, float k[TAPS], float* gaussiankernel_integral, float zero, out float blurred[COLUMN_RUN]){
+    const int w = (int)width;
+    const int h = (int)height;
 
     // row pass, kept in registers until every thread has read the input tile
     float rowOut[TASKS_PER_THREAD][ROW_RUN];
@@ -151,6 +169,15 @@ void blurTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid
     }
 }
 
+// The blur of the tile at (x0, y0) of src (blurStoredTile's outputs). Every thread of the workgroup calls it, and may
+// call it again for another plane (afterAnotherTile).
+void blurTile(float* src, int64_t width, int64_t height, int x0, int y0, int tid, float k[TAPS], float* gaussiankernel_integral, float zero, bool afterAnotherTile, out float blurred[COLUMN_RUN]){
+    float loaded[TILE_LOADS];
+    loadTile(src, width, height, x0, y0, tid, loaded);
+    storeTile(tid, loaded, afterAnotherTile);
+    blurStoredTile(width, height, x0, y0, tid, k, gaussiankernel_integral, zero, blurred);
+}
+
 [shader("compute")]
 [numthreads(THREADS, 1, 1)]
 void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float* second, uniform int postOp){
@@ -193,12 +220,49 @@ void CONCAT(separableBlur, WINDOW)(uint3 threadIdx : SV_GroupThreadID, uint3 blo
 }
 
 #if WINDOW == 3
+// Butteraugli's downsample of the tile at (x0, y0) into halfPlane, from the input tile in shared memory (storeTile): the
+// mean of each 2x2 block, the last row and column repeated, added up in downsample's order. A tile's blocks stay
+// inside it, as x0 and y0 are even. TILE_X*TILE_Y/4 is a multiple of THREADS.
+void storeHalfScale(float* halfPlane, int64_t width, int64_t height, int x0, int y0, int tid){
+    const int64_t halfWidth = (width - 1)/2 + 1;
+    const int64_t halfHeight = (height - 1)/2 + 1;
+    [ForceUnroll]
+    for (int q = 0; q < TILE_X*TILE_Y/4/THREADS; q++){
+        const int j = tid + q*THREADS;
+        const int64_t hx = x0/2 + j % (TILE_X/2);
+        const int64_t hy = y0/2 + j / (TILE_X/2);
+        if (hx >= halfWidth || hy >= halfHeight) continue;
+        const int left = (int)min(2*hx, width - 1);
+        const int right = (int)min(2*hx + 1, width - 1);
+        const int top = (int)min(2*hy, height - 1);
+        const int bottom = (int)min(2*hy + 1, height - 1);
+        float sum = 0.0f;
+        sum += storedTilePixel(x0, y0, left, top);
+        sum += storedTilePixel(x0, y0, left, bottom);
+        sum += storedTilePixel(x0, y0, right, top);
+        sum += storedTilePixel(x0, y0, right, bottom);
+        sum *= 0.25f;
+        halfPlane[hy*halfWidth + hx] = sum;
+    }
+}
+
+// blurTile of one plane of the opsin dynamics' image, which also writes the plane's half scale into halfPlane when
+// writeHalf is set (storeHalfScale).
+void blurTileAndHalve(float* src, float* halfPlane, bool writeHalf, int64_t width, int64_t height, int x0, int y0, int tid, float k[TAPS], float* gaussiankernel_integral, float zero, bool afterAnotherTile, out float blurred[COLUMN_RUN]){
+    float loaded[TILE_LOADS];
+    loadTile(src, width, height, x0, y0, tid, loaded);
+    storeTile(tid, loaded, afterAnotherTile);
+    if (writeHalf) storeHalfScale(halfPlane, width, height, x0, y0, tid);
+    blurStoredTile(width, height, x0, y0, tid, k, gaussiankernel_integral, zero, blurred);
+}
+
 // Butteraugli's opsin dynamics of an image (src1, src2, src3: linear RGB) into dst1, dst2, dst3: the 3 planes are
 // blurred (window 3) and combined with the image in one pass. dst must not be src, as other workgroups still read
-// src's tile borders.
+// src's tile borders. When writeHalfScale is set, the kernel also writes the image's half scale (Butteraugli's
+// downsample) into halfScale, its 3 planes one after the other.
 [shader("compute")]
 [numthreads(THREADS, 1, 1)]
-void opsinDynamicsBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* dst1, uniform float* dst2, uniform float* dst3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float intensity_multiplier){
+void opsinDynamicsBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* dst1, uniform float* dst2, uniform float* dst3, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float zero, uniform float intensity_multiplier, uniform float* halfScale, uniform int writeHalfScale){
     const int tid = (int)threadIdx.x;
     const int x0 = (int)blockIdx.x*TILE_X;
     const int y0 = (int)blockIdx.y*TILE_Y;
@@ -206,10 +270,12 @@ void opsinDynamicsBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     [ForceUnroll]
     for (int j = 0; j < TAPS; j++) k[j] = gaussiankernel[j];
 
+    const bool writeHalf = writeHalfScale != 0;
+    const int64_t halfSize = ((width - 1)/2 + 1)*((height - 1)/2 + 1);
     float blurred1[COLUMN_RUN], blurred2[COLUMN_RUN], blurred3[COLUMN_RUN];
-    blurTile(src1, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, false, blurred1);
-    blurTile(src2, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred2);
-    blurTile(src3, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred3);
+    blurTileAndHalve(src1, halfScale, writeHalf, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, false, blurred1);
+    blurTileAndHalve(src2, halfScale + halfSize, writeHalf, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred2);
+    blurTileAndHalve(src3, halfScale + 2*halfSize, writeHalf, width, height, x0, y0, tid, k, gaussiankernel_integral, zero, true, blurred3);
 
     const int x = x0 + tid % TILE_X;
     if (x >= (int)width) return;
@@ -225,4 +291,5 @@ void opsinDynamicsBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
         dst3[pixel] = xyb.z;
     }
 }
+
 #endif
