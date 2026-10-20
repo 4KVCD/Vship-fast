@@ -82,7 +82,9 @@ Job findJob(int64_t planeStride, int64_t baseWidth, int64_t baseHeight, int firs
 // coalesced.
 static const int TERMS = 3;
 static const int ROW_GROUP = 16;
-static const int CHUNK = 32;
+// 16 rather than 32: the shared memory of a workgroup halves, so twice as many fit on a Radeon 8060S to hide the
+// latency of the serial recurrence. A multiple of 4, so libjxl's blocks of 4 outputs never straddle two chunks.
+static const int CHUNK = 16;
 static const int CHUNK_IN = CHUNK + 2*RADIUS;  // inputs n-RADIUS-1 .. n+RADIUS-1 of the chunk's outputs
 static const int IN_PITCH = CHUNK_IN + 1;      // odd, so that lanes reading one column each of their rows do not conflict
 static const int OUT_PITCH = CHUNK + 1;
@@ -216,7 +218,8 @@ void blurRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
 // of the ssim error, the ringing (artifact) and the blurring (detail lost) and of their 4th powers into
 // sums[6*blockIdx.x...].
 static const int COLUMN_GROUP = THREADS;
-static const int ROW_CHUNK = 16;
+// 8 rather than 16, for the same reason as CHUNK in blurRows
+static const int ROW_CHUNK = 8;
 static const int MAP_ROWS = (ROW_CHUNK + SIGNALS - 1)/SIGNALS; // the rows of a chunk whose maps one thread computes
 groupshared float blurredChunk[SIGNALS][ROW_CHUNK*COLUMN_GROUP];
 groupshared float valuesChunk[3][ROW_CHUNK*COLUMN_GROUP]; // ssim, artifact, detail lost

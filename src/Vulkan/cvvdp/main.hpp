@@ -127,8 +127,7 @@ VkDeviceAddress placeCVVDPFinalStage(VshipDeviceHelper* deviceHelper, VkCommandB
     h = resize_height;
     for (int band = 0; band < levels; band++){
         if (band != levels-1){
-            placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, 0, 1, csfhandle);
-            placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, 1, 3, csfhandle);
+            placeFromPyrReduceToCSF(deviceHelper, cmdBuff, memPlace1[0][band], memPlace2[0][band], pyramidSize, w, h, band, csfhandle);
             placeComputeD(deviceHelper, cmdBuff, memPlace1[0][band], memPlace1[1][band], memPlace1[2][band], memPlace1[3][band], memPlace1[5][band], memPlace1[6][band], memPlace1[7][band], memPlace1[8][band], memPlace2[5][band], memPlace2[6][band], memPlace2[7][band], memPlace2[8][band], w, h, gaussianhandle);
         } else {
             //baseband
@@ -402,6 +401,7 @@ public:
         const Vship_Colorspace_t* colorspaces[2] = {&ref_colorspace, &dis_colorspace};
         for (int k = 0; k < 2; k++){
             VshipColorConvert::Converter::PixelConversion conversion;
+            //the converters' destination is linRGB, so the conversion has no primaries step (yuvToDKL does its own)
             if (!resizeFirst && converters[k]->outputIsPixelConversion() && converters[k]->placeChromaForPixelConversion(cmdBuff, converterTemps[k], conversion)){
                 placeYUVToDKL(deviceHelper, cmdBuff, conversion, filterSrcs_d[k], source_width, source_height, Y_peak, Y_black, Y_refl, exposure, colorspaces[k]->transferFunction, isHDR, colorspaces[k]->primaries);
                 continue;

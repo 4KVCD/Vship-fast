@@ -22,8 +22,9 @@
 
 namespace butter{
 
-//returns the address to which the diffmap is planned to be
-VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle){
+//returns the address to which the diffmap is planned to be. When halfScales is given, the opsin dynamics kernel also
+//writes each image's half scale (3 planes one after the other) at halfScales[0] and halfScales[1].
+VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle, const VkDeviceAddress* halfScales = nullptr){
     //Psycho Image planes
 
     VkDeviceAddress temp[3] = {mem_d, mem_d+sizeof(float)*1*width*height, mem_d+sizeof(float)*2*width*height};
@@ -38,21 +39,21 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
     VkDeviceAddress hf2[3] = {mem_d+sizeof(float)*19*width*height, mem_d+sizeof(float)*20*width*height};
     VkDeviceAddress uhf2[3] = {mem_d+sizeof(float)*21*width*height, mem_d+sizeof(float)*22*width*height};
 
-    //to XYB
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, temp, lf1, width, height, gaussianHandle, intensity_multiplier);
-    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, temp, lf2, width, height, gaussianHandle, intensity_multiplier);
+    //to XYB, into mf1 and mf2: the opsin dynamics kernel cannot write over its source, and the medium frequencies are
+    //written channel by channel, each after the separation has read that channel of the XYB image
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src1_d, mf1, width, height, gaussianHandle, intensity_multiplier, (halfScales != nullptr) ? halfScales[0] : 0);
+    placeOpsinDynamicsImage(deviceHelper, cmdBuff, src2_d, mf2, width, height, gaussianHandle, intensity_multiplier, (halfScales != nullptr) ? halfScales[1] : 0);
 
-    placeSeparateFrequencies(deviceHelper, cmdBuff, src1_d, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
-    placeSeparateFrequencies(deviceHelper, cmdBuff, src2_d, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);
+    placeSeparateFrequencies(deviceHelper, cmdBuff, mf1, temp, lf1, mf1, hf1, uhf1, width, height, gaussianHandle);
+    placeSeparateFrequencies(deviceHelper, cmdBuff, mf2, temp, lf2, mf2, hf2, uhf2, width, height, gaussianHandle);
 
     //no more needs for src1_d and src2_d so we reuse them as masks for butter
     VkDeviceAddress block_diff_dc[3] = {src1_d[0], src1_d[1], src1_d[2]};
     VkDeviceAddress block_diff_ac[3] = {src2_d[0], src2_d[1], src2_d[2]};
 
-    //set the accumulators to 0
+    //set the accumulators of the Malta differences to 0 (placeL2diffs sets block_diff_dc itself)
     for (int c = 0; c < 3; c++){
         placeMemset(deviceHelper, cmdBuff, block_diff_ac[c], width*height, 0);
-        placeMemset(deviceHelper, cmdBuff, block_diff_dc[c], width*height, 0);
     }
 
     const float hf_asymmetry_ = 0.8f;
@@ -87,13 +88,13 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
       29.2353797994f, 0.844626970982f, 0.703646627719f,
     };
 
-    for (int c = 0; c < 3; c++){
-        if (c < 2){
-            placeL2AsymDiff(deviceHelper, cmdBuff, hf1[c], hf2[c], block_diff_ac[c], width*height, wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_);
-        }
-        placeL2diff(deviceHelper, cmdBuff, mf1[c], mf2[c], block_diff_ac[c], width*height, wmul[3 + c]);
-        placeL2diff(deviceHelper, cmdBuff, lf1[c], lf2[c], block_diff_dc[c], width*height, wmul[6 + c]);
+    for (int c = 0; c < 2; c++){
+        placeL2AsymDiff(deviceHelper, cmdBuff, hf1[c], hf2[c], block_diff_ac[c], width*height, wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_);
     }
+    //then L2diff of the medium frequencies into block_diff_ac and of the low ones (converted by XybLowFreqToVals) into
+    //block_diff_dc, in one pass. It finds the planes at their places in mem_d, and the 3 planes of each block_diff one
+    //after the other, as they are allocated.
+    placeL2diffs(deviceHelper, cmdBuff, mem_d, block_diff_ac[0], block_diff_dc[0], width*height, wmul+3, wmul+6);
 
     //from now on, lf and mf are not used so we will reuse the memory
     VkDeviceAddress mask = temp[1];
@@ -117,7 +118,7 @@ VkDeviceAddress placeGetdiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer
 
 //expects linear planar RGB as input, mem_d must contain 25 planes (srcs are rewritten so they are unusable after execution)
 VkDeviceAddress placeGetmultiscalediffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress mem_d, uint64_t width, uint64_t height, float intensity_multiplier, GaussianHandle& gaussianHandle){
-    //computing downscaled before we overwrite src in getdiffmap (it s better for memory)
+    //the half scale, written by the full scale's opsin dynamics kernel before getdiffmap overwrites src
     uint64_t nwidth = (width-1)/2+1;
     uint64_t nheight = (height-1)/2+1;
     VkDeviceAddress nmem_d = mem_d; //allow usage up to mem_d+2*width*height;
@@ -125,12 +126,8 @@ VkDeviceAddress placeGetmultiscalediffmap(VshipDeviceHelper* deviceHelper, VkCom
     VkDeviceAddress nsrc2_d[3] = {nmem_d+sizeof(float)*3*nwidth*nheight, nmem_d+sizeof(float)*4*nwidth*nheight, nmem_d+sizeof(float)*5*nwidth*nheight};
 
     //using 6 smaller planes is equivalent to 1.5 standard planes, so it fits within the 2 planes given here!)
-    for (int i = 0; i < 3; i++){
-        placeDownsample(deviceHelper, cmdBuff, src1_d[i], nsrc1_d[i], width, height);
-        placeDownsample(deviceHelper, cmdBuff, src2_d[i], nsrc2_d[i], width, height);
-    }
-
-    VkDeviceAddress diffmap = placeGetdiffmap(deviceHelper, cmdBuff, src1_d, src2_d, mem_d+sizeof(float)*2*width*height, width, height, intensity_multiplier, gaussianHandle);
+    const VkDeviceAddress halfScales[2] = {nsrc1_d[0], nsrc2_d[0]};
+    VkDeviceAddress diffmap = placeGetdiffmap(deviceHelper, cmdBuff, src1_d, src2_d, mem_d+sizeof(float)*2*width*height, width, height, intensity_multiplier, gaussianHandle, halfScales);
     //diffmap is stored at mem_d+8*width*height so we can build after that the second smaller scale
     //smaller scale now
     nmem_d = mem_d+sizeof(float)*3*width*height;

@@ -35,7 +35,7 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"Planed.spv", {"StrideEliminator", "StrideAdder"}},
     {"kernelTest.spv", {"main"}},
     {"basicOperations.spv", {"multArray", "subArray", "memSet"}},
-    {"anyDepthToFloat.spv", {"convertToFloatPlane"}},
+    {"anyDepthToFloat.spv", {"convertToFloatPlane", "repackRows"}},
     {"chromaUpsample.spv", {
         "bicubicHorizontalCenterUpscaleX2", 
         "bicubicHorizontalLeftUpscaleX2", 
@@ -51,25 +51,22 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"primaries.spv", {"primariesToPrimaries"}},
     {"YUVToLinRGB.spv", {"YUVToLinRGB", "YUVToLinRGBUpsampled"}},
     //SSIMU2
-    {"downsampleSSIMU2.spv", {"downsample"}},
+    {"downsampleSSIMU2.spv", {"downsample", "yuvToPyramid8", "yuvToPyramid16"}},
     {"makeXYBSSIMU2.spv", {"rgb_to_positive_xyb"}},
     {"scoreSSIMU2.spv", {"blurRows", "blurColumnsAndScore"}},
     //Butter
-    {"gaussianBlurButter.spv", {"horizontalBlur", "verticalBlur", "TiledGaussianBlur"}},
-    {"downupsampleButter.spv", {"downsample", "addsupersample2X"}},
+    {"gaussianBlurButter.spv", {"TiledGaussianBlur"}},
+    {"separableBlur3Butter.spv", {"separableBlur3", "opsinDynamicsBlur"}},
+    {"separableBlur4Butter.spv", {"separableBlur4"}},
+    {"separableBlur18Butter.spv", {"separableBlur18"}},
+    {"downupsampleButter.spv", {"addsupersample2X"}},
     {"maltaDiffButter.spv", {"MaltaDiffMapLF", "MaltaDiffMap"}},
-    {"colorsButter.spv", {"opsinDynamicsImage"}},
-    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff"}},
+    {"simplerDiffButter.spv", {"samenoisediff", "diffclamp", "L2diff", "L2AsymDiff", "L2diffs"}},
     {"maskPsychoButter.spv", {"fuzzyerrosion", "maskinit"}},
     {"combineMasksButter.spv", {"computeDiffmap"}},
     {"diffnormsButter.spv", {"sumreducenorm", "sumreduce"}},
     {"separateFrequenciesButter.spv", {
-        "subarray_removerangearound0", 
-        "removerangearound0", 
-        "subarray_amplifyrangearound0", 
-        "supressXbyY", 
-        "separateHf_Uhf", 
-        "XybLowFreqToVals"
+        "supressXbyY"
         }
     },
     //CVVDP
@@ -88,7 +85,12 @@ struct VshipDeviceHelper{
     std::unordered_map<std::string, VkPipeline> cachedPipeline;
     //can be usedas expected
     VkDeviceManager device;
+    //the GPU's PCI vendor ID (VkPhysicalDeviceProperties::vendorID), for kernels whose best workgroup size differs
+    uint32_t vendorID;
     VshipDeviceHelper(VkInstance instance, VkPhysicalDevice& hd) : device(instance, hd) {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(hd, &properties);
+        vendorID = properties.vendorID;
         //auto init = std::chrono::high_resolution_clock::now();
         for (const auto& [shaderName, entry_points] : entry_pointsPerShader) {
             VkShaderModule shaderModule = device.loadShaderModule(shaderNameToByteCode[shaderName]);

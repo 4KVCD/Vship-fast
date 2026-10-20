@@ -1,8 +1,11 @@
-float gamma(float v) {
+module opsinModule;
+
+// Butteraugli's opsin dynamics (libjxl's OpsinDynamicsImage), from the image and its blur (window 3, sigma 1.2)
+public float gamma(float v) {
     return fma(19.245013259874995f, log(v + 9.9710635769299145), -23.16046239805755f);
 }
 
-float3 butterOpsinAbsorbance(float3 a, bool clamp = false){
+public float3 butterOpsinAbsorbance(float3 a, bool clamp = false){
     float3 out;
     out.x = fma(0.29956550340058319f, a.x,
     fma(0.63373087833825936f, a.y,
@@ -28,15 +31,10 @@ float3 butterOpsinAbsorbance(float3 a, bool clamp = false){
     return out;
 }
 
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void opsinDynamicsImage(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src1, uniform float* src2, uniform float* src3, uniform float* blurred1, uniform float* blurred2, uniform float* blurred3, uniform uint64_t width, uniform uint64_t height, uniform float intensity_multiplier){
-    uint64_t x = threadIdx.x + blockIdx.x*256;
-    if (x >= width*height) return;
-
+// The opsin dynamics XYB of a pixel from its linear RGB src and the blur of it, both before the intensity multiplier:
+// the code of the former opsinDynamicsImage kernel, which wrote these 3 values over its source planes.
+public float3 opsinDynamics(float3 src, float3 blurred, float intensity_multiplier){
     float3 sensitivity;
-    float3 src = {src1[x], src2[x], src3[x]};
-    float3 blurred = {blurred1[x], blurred2[x], blurred3[x]};
     src *= intensity_multiplier;
     blurred *= intensity_multiplier;
     blurred = butterOpsinAbsorbance(blurred, true);
@@ -52,9 +50,5 @@ void opsinDynamicsImage(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_
     src.z = max(src.z, 12.226454707163354f);
 
     //make positive + export
-
-    src1[x] = src.x - src.y; 
-    src2[x] = src.x + src.y; 
-    src3[x] = src.z;
-    //if ((x == 376098 && width*height == 1080*1920)) printf("%f, %f, %f and %f, %f, %f to %f, %f, %f with %f, %f, %f sens\n", oldsrc.x, oldsrc.y, oldsrc.z, oldblurred.x, oldblurred.y, oldblurred.z, src1[x], src2[x], src3[x], sensitivity.x, sensitivity.y, sensitivity.z);
+    return float3(src.x - src.y, src.x + src.y, src.z);
 }

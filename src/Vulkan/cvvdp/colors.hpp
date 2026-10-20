@@ -35,13 +35,13 @@ void placeYUVToDKL(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, con
 
     VkPipeline pipeline = deviceHelper->cachedPipeline["colorsCVVDP.spv:yuvToDKL"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, conversion.luma, conversion.chroma1, conversion.chroma2, out[0], out[1], out[2], (uint64_t)width, (uint64_t)height, conversion.verticalMode, (int)conversion.matrix, (int)conversion.transfer, (int)conversion.libjxlArithmetic, Y_peak, Y_black, Y_refl, exposure, pq, (int)primaries, zero);
+    fillKernelArguments(0, kernelArguments, conversion.luma, conversion.chroma1, conversion.chroma2, out[0], out[1], out[2], (uint64_t)width, (uint64_t)height, conversion.verticalMode, (int)conversion.matrix, (int)conversion.transfer, (int)conversion.libjxlArithmetic, Y_peak, Y_black, Y_refl, exposure, pq, (int)primaries, zero, conversion.rawLuma, conversion.rawLumaFormat, conversion.rawLumaScale);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, height, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {out[0], width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {out[1], width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
         {out[2], width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
-        {conversion.luma, width*height*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
+        {(conversion.rawLuma != 0) ? conversion.rawLuma : conversion.luma, conversion.lumaBytes, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {conversion.chroma1, width*conversion.chromaHeight*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},
         {conversion.chroma2, width*conversion.chromaHeight*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
     });

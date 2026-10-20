@@ -63,4 +63,22 @@ void placeL2AsymDiff(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, V
     });
 }
 
+//L2diffs (simplerDiff.slang): placeGetdiffmap's L2diff updates in one pass, after placeL2AsymDiff, with the low
+//frequencies' XybLowFreqToVals. planes is placeGetdiffmap's plane memory, ac and dc its 3 contiguous block_diff_ac and
+//block_diff_dc planes; dc need not be set to 0 first.
+void placeL2diffs(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress planes, VkDeviceAddress ac, VkDeviceAddress dc, uint64_t width, const float mfWeights[3], const float lfWeights[3]){
+    const uint64_t th_x = 256;
+    const uint64_t bl_x = (width-1)/th_x + 1;
+
+    VkPipeline pipeline = deviceHelper->cachedPipeline["simplerDiffButter.spv:L2diffs"];
+    uint8_t kernelArguments[128];
+    fillKernelArguments(0, kernelArguments, planes, ac, dc, width, mfWeights[0], mfWeights[1], mfWeights[2], lfWeights[0], lfWeights[1], lfWeights[2], 0u);
+    deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, 1, 1);
+    deviceHelper->device.placeMemoryBarriers(cmdBuff, {
+        {ac, 3*width*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {dc, 3*width*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
+        {planes, 21*width*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}
+    });
+}
+
 }

@@ -1,44 +1,13 @@
-[shader("compute")]
-[numthreads(256, 1, 1)]
-void horizontalBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* src, uniform int64_t w, uniform int64_t h, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform int gaussiansize){
-    int64_t x = threadIdx.x + blockIdx.x*256;
-    int64_t size = w*h;
-    if (x >= size) return;
+import frequencyOpsModule;
 
-    int64_t current_line = x/w;
-
-    const int64_t begin = max(x-gaussiansize, current_line*w);
-    const int64_t end = min(x+gaussiansize, (current_line+1)*w-1);
-    float weight = gaussiankernel_integral[gaussiansize+end+1-x]-gaussiankernel_integral[gaussiansize+begin-x];
-
-    float out = 0.0f;
-    for (int64_t i = begin; i <= end; i++){
-        out += src[i]*gaussiankernel[gaussiansize+i-x];
-    }
-    dst[x] = out/weight;
-}
-
-[shader("compute")]
-[numthreads(32, 8, 1)]
-void verticalBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* dst, uniform float* src, uniform int64_t w, uniform int64_t h, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform int gaussiansize){
-    int64_t x = threadIdx.x + blockIdx.x*32;
-    int64_t y = threadIdx.y + blockIdx.y*8;
-    if (x >= w) return;
-    if (y >= h) return;
-
-    const int64_t begin = max(y-gaussiansize, (int64_t)0);
-    const int64_t end = min(y+gaussiansize, (int64_t)h-1);
-    float weight = gaussiankernel_integral[gaussiansize+end+1-y]-gaussiankernel_integral[gaussiansize+begin-y];;
-    float out = 0.0f;
-    for (int64_t i = begin; i <= end; i++){
-        out += src[i * w + x]*gaussiankernel[gaussiansize+i-y];
-    }
-    dst[y*w+x] = out/weight;
-}
+// the passes TiledGaussianBlur can do after the blur (postOp), as BlurPostOp in gaussianblur.hpp
+static const int POST_NONE = 0;
+static const int POST_SUBTRACT_REMOVE_RANGE = 4;
+static const int POST_SUBTRACT_AMPLIFY_RANGE = 5;
 
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral){
+void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* src, uniform float* dst, uniform int64_t width, uniform int64_t height, uniform float* gaussiankernel, uniform float* gaussiankernel_integral, uniform float* second, uniform int postOp, uniform float w){
     int64_t originalBl_X = blockIdx.x;
     //let's determine which scale our block is in and adjust our input parameters accordingly
 
@@ -54,13 +23,17 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     const int tampon_base_x = (int)(x - thx - 8);
     const int tampon_base_y = (int)(y - thy - 8);
 
-    //fill tampon
-    
-    for (int region_x = 0; region_x < 48; region_x += 16){
-        
-        for (int region_y = 0; region_y < 48; region_y += 16){
-            tampon[(thy+region_y)*48+thx+region_x] = (tampon_base_x + thx +region_x >= 0 && tampon_base_x + thx +region_x < width && tampon_base_y + thy + region_y >= 0 && tampon_base_y + thy + region_y < height) ? src[(tampon_base_y+thy+region_y)*width + tampon_base_x+thx+region_x] : 0.f;
-        }
+    //fill tampon: the 9 loads of a thread are all issued before its first store, so that their waits overlap
+    float loaded[9];
+    [ForceUnroll]
+    for (int region = 0; region < 9; region++){
+        const int region_x = 16*(region/3);
+        const int region_y = 16*(region%3);
+        loaded[region] = (tampon_base_x + thx +region_x >= 0 && tampon_base_x + thx +region_x < width && tampon_base_y + thy + region_y >= 0 && tampon_base_y + thy + region_y < height) ? src[(tampon_base_y+thy+region_y)*width + tampon_base_x+thx+region_x] : 0.f;
+    }
+    [ForceUnroll]
+    for (int region = 0; region < 9; region++){
+        tampon[(thy+16*(region%3))*48+thx+16*(region/3)] = loaded[region];
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -122,12 +95,23 @@ void TiledGaussianBlur(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_G
     }
     GroupMemoryBarrierWithGroupSync();
 
-    //if (x == 0 && y == 0) debugAddress[0] = float4(tampon[(8+0*16)*48+8+0*16], tampon[(8+1*16)*48+8+0*16], 1, 2);
-    
+    // postOp: also the pass that followed the blur, on the blurred value b read back from tampon (as it was read back
+    // from dst before): second = src - b, and dst = RemoveRangeAroundZero(b, w) (subarray_removerangearound0) or
+    // AmplifyRangeAroundZero(b, w) (subarray_amplifyrangearound0). second must not be src, whose tile borders other
+    // workgroups still read.
     for (int region_x = 0; region_x < 2; region_x++){
-        
+
         for (int region_y = 0; region_y < 2; region_y++){
-            if (tampon_base_x + thx +8+region_x*16 >= 0 && tampon_base_x + thx +8+region_x*16 < width && tampon_base_y + thy +8+region_y*16 >= 0 && tampon_base_y + thy +8+region_y*16 < height) dst[(tampon_base_y+thy+8+region_y*16)*width + tampon_base_x+thx+8+region_x*16] = tampon[(thy+8+region_y*16)*48+thx+8+region_x*16];
+            if (tampon_base_x + thx +8+region_x*16 >= 0 && tampon_base_x + thx +8+region_x*16 < width && tampon_base_y + thy +8+region_y*16 >= 0 && tampon_base_y + thy +8+region_y*16 < height){
+                const int64_t pixel = (tampon_base_y+thy+8+region_y*16)*width + tampon_base_x+thx+8+region_x*16;
+                const float b = tampon[(thy+8+region_y*16)*48+thx+8+region_x*16];
+                if (postOp == POST_NONE){
+                    dst[pixel] = b;
+                } else {
+                    second[pixel] = src[pixel] - b;
+                    dst[pixel] = (postOp == POST_SUBTRACT_REMOVE_RANGE) ? RemoveRangeAroundZero_Device(b, w) : AmplifyRangeAroundZero_Device(b, w);
+                }
+            }
         }
     }
 }

@@ -54,14 +54,14 @@ void displayToDKL(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupI
 }
 
 // The converter's last step (YUVToLinRGBUpsampled: the chroma's vertical upsampling and YUV to linear RGB) and
-// displayToDKL in one pass over memory: the luma plane and the horizontally upsampled chroma
+// displayToDKL in one pass over memory: the luma (lumaAt) and the horizontally upsampled chroma
 // (Converter::placeChromaForPixelConversion) to the DKL planes out1..out3. The linear RGB goes through an OR with a
 // runtime zero, as it went through memory before, so that the compiler cannot fuse the two steps' arithmetic.
 // displayToDKL's code is repeated as it is written there: the driver compiled it to different roundings when it
 // was a function shared by the two kernels. One thread per pixel, blockIdx.y the row.
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void yuvToDKL(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* out1, uniform float* out2, uniform float* out3, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform float Y_peak, uniform float Y_black, uniform float Y_refl, uniform float exposure, uniform int pq, uniform Vship_Primaries_t primaries, uniform uint zero){
+void yuvToDKL(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* luma, uniform float* chroma1, uniform float* chroma2, uniform float* out1, uniform float* out2, uniform float* out3, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform float Y_peak, uniform float Y_black, uniform float Y_refl, uniform float exposure, uniform int pq, uniform Vship_Primaries_t primaries, uniform uint zero, uniform uint8_t* rawLuma, uniform int rawLumaFormat, uniform float rawLumaScale){
     const int64_t width = (int64_t)width64;
     const int64_t height = (int64_t)height64;
     const int64_t x = threadIdx.x + 256*blockIdx.x;
@@ -69,7 +69,7 @@ void yuvToDKL(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
     if (x >= width) return;
     const int64_t i = r*width + x;
 
-    float3 val = {luma[i], unfused(upsampledChroma(chroma1, x, r, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, r, width, height, verticalMode), zero)};
+    float3 val = {lumaAt(luma, rawLuma, rawLumaFormat, rawLumaScale, i, width, zero), unfused(upsampledChroma(chroma1, x, r, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, r, width, height, verticalMode), zero)};
     val = inverseMatrixNCL(val, matrix);
     val = inverseTransfer(val, transfer, libjxlArithmetic != 0);
     val = inverseMatrixCL(val, matrix);

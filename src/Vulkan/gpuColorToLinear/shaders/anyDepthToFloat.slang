@@ -82,6 +82,17 @@ float pickValue(uint8_t* source_plane, uint64_t x, uint64_t stride, uint64_t wid
     }
 }
 
+// The float of sample x of a luma plane of the given width with rows packed one after the other, as
+// convertToFloatPlane gives it. format packs the sample type, the range and misalignementHandling
+// (Converter::PixelConversion::rawLumaFormat); fullRangeScale is convertToFloatPlane's.
+float rawLumaSample(uint8_t* plane, uint64_t x, uint64_t width, int format, float fullRangeScale){
+    const Vship_Sample_t sampleType = (Vship_Sample_t)(format & 0xff);
+    const Vship_Range_t range = (Vship_Range_t)((format >> 8) & 0xff);
+    const bool misalignementHandling = ((format >> 16) & 1) != 0;
+    const uint64_t stride = width*(uint64_t)bytesizeSample(sampleType);
+    return fullRange(sampleType, range, false, pickValue(plane, x, stride, width, sampleType, misalignementHandling), fullRangeScale);
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void convertToFloatPlane(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* output_plane, uniform uint8_t* source_plane, uniform uint64_t stride, uniform uint64_t width, uniform uint64_t height, uniform Vship_Sample_t sampleType, uniform Vship_Range_t range, uniform int ColorFamchromaPlane, uniform int misalignementHandling, uniform float fullRangeScale){
@@ -91,4 +102,15 @@ void convertToFloatPlane(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV
     float val = pickValue(source_plane, x, stride, width, sampleType, (bool)misalignementHandling);
     val = fullRange(sampleType, range, (bool)ColorFamchromaPlane, val, fullRangeScale);
     output_plane[x] = val;
+}
+
+// Packs rows rows of rowBytes bytes, srcPitch bytes apart in src, into dst, dstPitch bytes apart: the upload of a
+// plane with padded lines into the upload's layout. A thread per byte, blockIdx.y the row.
+[shader("compute")]
+[numthreads(256, 1, 1)]
+void repackRows(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform uint8_t* src, uniform uint8_t* dst, uniform uint64_t srcPitch, uniform uint64_t dstPitch, uniform uint64_t rowBytes){
+    const uint64_t x = threadIdx.x + 256*(uint64_t)blockIdx.x;
+    const uint64_t row = blockIdx.y;
+    if (x >= rowBytes) return;
+    dst[row*dstPitch + x] = src[row*srcPitch + x];
 }

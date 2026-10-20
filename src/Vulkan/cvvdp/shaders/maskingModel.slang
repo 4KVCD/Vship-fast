@@ -70,17 +70,26 @@ int64_t reflect(int64_t x, int64_t size){
     return x;
 }
 
-// Loads min(|src1|, |src2|) of channel c for this 16x16 block and a halo of 8 pixels into tampon[c], reflected at
-// the borders.
-void GaussianSmartSharedLoadMinAbs(const int c, const int thx, const int thy, float* src1, float* src2, int64_t x, int64_t y, int64_t width, int64_t height){
+// min(|src1|, |src2|) of this thread's 4 pixels of the 16x16 block and its halo of 8 pixels, reflected at the
+// borders, in the order tampon takes them: (dy, dx) = (0, 0), (0, 16), (16, 0), (16, 16).
+float4 GaussianSmartLoadMinAbs(const int thx, const int thy, float* src1, float* src2, int64_t x, int64_t y, int64_t width, int64_t height){
     const int64_t tampon_base_x = x - thx - 8;
     const int64_t tampon_base_y = y - thy - 8;
-    for (int dy = 0; dy < 32; dy += 16){
-        for (int dx = 0; dx < 32; dx += 16){
-            const int64_t pixel = reflect(tampon_base_y + thy + dy, height)*width + reflect(tampon_base_x + thx + dx, width);
-            tampon[c][(thy+dy)*32 + thx+dx] = min(abs(src1[pixel]), abs(src2[pixel]));
-        }
+    float4 values;
+    [ForceUnroll]
+    for (int k = 0; k < 4; k++){
+        const int dy = 16*(k/2);
+        const int dx = 16*(k%2);
+        const int64_t pixel = reflect(tampon_base_y + thy + dy, height)*width + reflect(tampon_base_x + thx + dx, width);
+        values[k] = min(abs(src1[pixel]), abs(src2[pixel]));
     }
+    return values;
+}
+
+// Stores GaussianSmartLoadMinAbs' values of channel c into tampon[c].
+void GaussianSmartSharedStore(const int c, const int thx, const int thy, float4 values){
+    [ForceUnroll]
+    for (int k = 0; k < 4; k++) tampon[c][(thy + 16*(k/2))*32 + thx + 16*(k%2)] = values[k];
 }
 
 // pycvvdp's phase uncertainty blur of the values loaded for this thread's pixel in the 4 channels: the 13-tap
@@ -132,11 +141,16 @@ void computeD(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
 
     const float powmaskc = pow(10, mask_c);
 
-    //the 4 channels are loaded and blurred together, so that their reads overlap and they share the barriers
-    GaussianSmartSharedLoadMinAbs(0, threadIdx.x, threadIdx.y, R0, T0, x, y, width, height);
-    GaussianSmartSharedLoadMinAbs(1, threadIdx.x, threadIdx.y, R1, T1, x, y, width, height);
-    GaussianSmartSharedLoadMinAbs(2, threadIdx.x, threadIdx.y, R2, T2, x, y, width, height);
-    GaussianSmartSharedLoadMinAbs(3, threadIdx.x, threadIdx.y, R3, T3, x, y, width, height);
+    //the 4 channels are loaded and blurred together, so that they share the barriers. All the loads are issued
+    //before the first store into tampon, so that their waits overlap.
+    const float4 loaded0 = GaussianSmartLoadMinAbs(threadIdx.x, threadIdx.y, R0, T0, x, y, width, height);
+    const float4 loaded1 = GaussianSmartLoadMinAbs(threadIdx.x, threadIdx.y, R1, T1, x, y, width, height);
+    const float4 loaded2 = GaussianSmartLoadMinAbs(threadIdx.x, threadIdx.y, R2, T2, x, y, width, height);
+    const float4 loaded3 = GaussianSmartLoadMinAbs(threadIdx.x, threadIdx.y, R3, T3, x, y, width, height);
+    GaussianSmartSharedStore(0, threadIdx.x, threadIdx.y, loaded0);
+    GaussianSmartSharedStore(1, threadIdx.x, threadIdx.y, loaded1);
+    GaussianSmartSharedStore(2, threadIdx.x, threadIdx.y, loaded2);
+    GaussianSmartSharedStore(3, threadIdx.x, threadIdx.y, loaded3);
     GroupMemoryBarrierWithGroupSync();
     const float4 blurred = GaussianSmart_Device(threadIdx.x, threadIdx.y, width, height, gaussiankernel);
     const float blurred_Cm0 = safe_pow(powmaskc*abs(blurred[0]), mask_q[0]);

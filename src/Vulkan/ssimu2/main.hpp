@@ -13,66 +13,35 @@
 
 namespace ssimu2{
 
-int64_t getTotalScaleSize(int64_t width, int64_t height){
-    int64_t result = 0;
-    for (int scale = 0; scale < 6; scale++){
-        result += width*height;
-        width = (width-1)/2+1;
-        height = (height-1)/2+1;
-    }
-    return result;
-}
-
 void placeDebugTransfer(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, uint8_t* out, VkDeviceAddress in, size_t size){
     deviceHelper->device.memCpyDtoH(cmdBuff, out, in, size);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {{in, size, VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT}});
 }
 
-//expects planar linear RGB input. Beware that each src1_d and src2_d must be of size "totalscalesize" even if the actual image is contained in a width*height format
-//temp_d holds tempAllocsizeScore floats and sums_d sumsSize floats, copied to sums on the CPU
-void placeSsimu2GPUProcess(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, float* sums, VkDeviceAddress src1_d[3], VkDeviceAddress src2_d[3], VkDeviceAddress temp_d, VkDeviceAddress sums_d, int64_t width, int64_t height, GaussianHandle& gaussianhandle){
-    const int64_t totalscalesize = getTotalScaleSize(width, height);
-
-    //step 1 : fill the downsample part
+//The 5 smaller scales of a linear RGB image, and all 6 in positive XYB: planes hold the full scale and room for the
+//others after it (getTotalScaleSize floats each).
+void placeDownsampleScales(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress planes[3], int64_t width, int64_t height){
     int64_t nw = width;
     int64_t nh = height;
     int64_t index = 0;
     for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src1_d[0]+sizeof(float)*index, src1_d[1]+sizeof(float)*index, src1_d[2]+sizeof(float)*index, src1_d[0]+sizeof(float)*(index+nw*nh), src1_d[1]+sizeof(float)*(index+nw*nh), src1_d[2]+sizeof(float)*(index+nw*nh), nw, nh, scale == 5);
+        placeDownsample(deviceHelper, cmdBuff, planes[0]+sizeof(float)*index, planes[1]+sizeof(float)*index, planes[2]+sizeof(float)*index, planes[0]+sizeof(float)*(index+nw*nh), planes[1]+sizeof(float)*(index+nw*nh), planes[2]+sizeof(float)*(index+nw*nh), nw, nh, scale == 5);
         index += nw*nh;
-        nw = (nw -1)/2 + 1;
+        nw = (nw - 1)/2 + 1;
         nh = (nh - 1)/2 + 1;
     }
-    nw = width;
-    nh = height;
-    index = 0;
-    for (int scale = 1; scale <= 5; scale++){
-        placeDownsample(deviceHelper, cmdBuff, src2_d[0]+sizeof(float)*index, src2_d[1]+sizeof(float)*index, src2_d[2]+sizeof(float)*index, src2_d[0]+sizeof(float)*(index+nw*nh), src2_d[1]+sizeof(float)*(index+nw*nh) , src2_d[2]+sizeof(float)*(index+nw*nh), nw, nh, scale == 5);
-        index += nw*nh;
-        nw = (nw -1)/2 + 1;
-        nh = (nh - 1)/2 + 1;
+}
+
+//The image's 6 scales in positive XYB into planes: in one pass from the converter's luma and chroma when the
+//converter allows it, else the converter's own passes then the downsampling ones.
+void placeImageScales(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VshipColorConvert::Converter& converter, VkDeviceAddress converterTemp, VkDeviceAddress planes[3], int64_t width, int64_t height){
+    VshipColorConvert::Converter::PixelConversion conversion;
+    if (converter.outputIsPixelConversion() && converter.placeChromaForPixelConversion(cmdBuff, converterTemp, conversion)){
+        placeYuvToPyramid(deviceHelper, cmdBuff, conversion, planes, width, height);
+        return;
     }
-
-    //step 2 : positive XYB transition
-    //placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src1_d, totalscalesize);
-    //placeRgb_to_positive_xyb(deviceHelper, cmdBuff, src2_d, totalscalesize);
-
-    //step 4 : ssim map
-    
-    //step 5 : edge diff map    
-    //std::vector<float> allscore_res;
-    //measure_vec[plane*6*2*3 + scale*2*3 + n*3 + i]
-    placeAllscore_map(deviceHelper, cmdBuff, sums, sums_d, src1_d, src2_d, temp_d, width, height, gaussianhandle);
-
-    //step 6 : format the vector
-
-    //step 7 : enjoy !
-    //const double ssim = final_score(allscore_res);
-
-    //hipEventRecord(event_d, stream); //place an event in the stream at the end of all our operations
-    //hipEventSynchronize(event_d); //when the event is complete, we know our gpu result is ready!
-
-    //return ssim;
+    converter.placeConvert(cmdBuff, converterTemp);
+    placeDownsampleScales(deviceHelper, cmdBuff, planes, width, height);
 }
 
 class SSIMU2ComputingImplementation{
@@ -140,11 +109,10 @@ public:
         //while it's running, (even though it should take less time on gpu than queuesubmit oof) we do other stuff
         //record buffer2 (the heart of ssimu2)
         beginCmdBuffer(cmdBuffs[2]);
-        //color convert
-        converter1.placeConvert(cmdBuffs[2], converterTempMemory);
-        converter2.placeConvert(cmdBuffs[2], converterTempMemory+tempSizeConverter1);
-        //result should be in src1_d src2_d
-        placeSsimu2GPUProcess(deviceHelper, cmdBuffs[2], sumsCPU, src1_d, src2_d, temp_d, sums_d, width, height, gaussianhandle);
+        //color conversion and scales, then the scores
+        placeImageScales(deviceHelper, cmdBuffs[2], converter1, converterTempMemory, src1_d, width, height);
+        placeImageScales(deviceHelper, cmdBuffs[2], converter2, converterTempMemory+tempSizeConverter1, src2_d, width, height);
+        placeAllscore_map(deviceHelper, cmdBuffs[2], sumsCPU, sums_d, src1_d, src2_d, temp_d, width, height, gaussianhandle);
         endCmdBuffer(cmdBuffs[2]);
 
         fence->synchronize();

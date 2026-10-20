@@ -20,6 +20,7 @@ constexpr bool fp16Support = false;
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 #include <vulkan/vulkan.h>
+#include "profiler.hpp"
 
 #ifndef THROW_ERROR
 #define THROW_ERROR(STRING) throw std::runtime_error(STRING)
@@ -339,6 +340,7 @@ bool isDeviceSuitable(const VkPhysicalDevice& device) {
 void beginCmdBuffer(VkCommandBuffer cmdbuff){
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     if (vkBeginCommandBuffer(cmdbuff, &beginInfo) != VK_SUCCESS) THROW_ERROR("Failed to End Command Buffer");
+    VSHIP_PROFILE_BEGIN(cmdbuff);
 }
 void endCmdBuffer(VkCommandBuffer cmdbuff){
     if (vkEndCommandBuffer(cmdbuff) != VK_SUCCESS) THROW_ERROR("Failed to End Command Buffer");
@@ -402,6 +404,7 @@ public:
     void synchronize(){
         if (vkWaitForFences(device, 1, &fence, true, UINT64_MAX) != VK_SUCCESS) THROW_ERROR("Failed to synchronize to Fence");
         if (vkResetFences(device, 1, &fence) != VK_SUCCESS) THROW_ERROR("Failed to reset Fence");
+        VSHIP_PROFILE_COMPLETED(fence);
     }
     bool getStatus(){
         VkResult res = vkGetFenceStatus(device, fence);
@@ -477,6 +480,7 @@ class VkDeviceManager{
         vkGetDeviceQueue(device, queueFamily.indices.value(), 0, &queue);
         uploadQueue = queue;
         if (transferFamily.has_value()) vkGetDeviceQueue(device, transferFamily.value(), 0, &uploadQueue);
+        VSHIP_PROFILE_INIT(device, physicalDevice);
     }
     void initVmaAllocator(VkInstance& instance, VkPhysicalDevice& physicalDevice){
         VmaAllocatorCreateInfo createInfo{};
@@ -609,6 +613,7 @@ public:
         if (err != VK_SUCCESS){
             THROW_ERROR("Error " + std::to_string(err) + " while creating compute pipeline");
         }
+        VSHIP_PROFILE_NAME(pipeline, entry_point);
         return pipeline;
     }
     void destroyComputePipeline(VkPipeline pipeline){
@@ -807,7 +812,9 @@ public:
     void placeKernel(VkCommandBuffer cmdbuff, VkPipeline computePipeline, uint8_t* arguments, uint64_t bl_x, uint64_t bl_y = 1, uint64_t bl_z = 1){
         vkCmdPushConstants(cmdbuff, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, arguments);
         vkCmdBindPipeline(cmdbuff, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
+        VSHIP_PROFILE_BEFORE_KERNEL(cmdbuff);
         vkCmdDispatch(cmdbuff, bl_x, bl_y, bl_z);
+        VSHIP_PROFILE_AFTER_KERNEL(cmdbuff, computePipeline);
     }
     FenceManager* createFence(){
         return new FenceManager(device);
@@ -837,6 +844,7 @@ public:
         createInfo.commandBufferInfoCount = 1;
         createInfo.pCommandBufferInfos = &cmdBufferInfo;
 
+        VSHIP_PROFILE_SUBMITTED(&cmdbuff, 1, fence->fence);
         queueLock.lock();
         if (vkQueueSubmit2(queue, 1, &createInfo, fence->fence) != VK_SUCCESS) {
             queueLock.unlock();
@@ -904,6 +912,7 @@ public:
             createInfo.pCommandBufferInfos = createInfosBuffers.data()+i;
         }
 
+        VSHIP_PROFILE_SUBMITTED(cmdbuffs, numBuff, fence->fence);
         queueLock.lock();
         if (vkQueueSubmit2(queue, numBuff, createInfos.data(), fence->fence) != VK_SUCCESS) {
             queueLock.unlock();

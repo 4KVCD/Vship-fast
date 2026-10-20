@@ -1,6 +1,7 @@
 import vshipColorModule;
 import inverseTransferModule;
 import vshipBicubicModule;
+import anyDepthToFloat;
 
 float3 ncl_yuv_to_rgb_from_kr_kb(float3 val, const float Kr, const float Kb){
     const float Kg = 1.f-Kb-Kr;
@@ -192,13 +193,20 @@ float unfused(float x, uint zero){
     return asfloat(asuint(x) | zero);
 }
 
+// The luma of pixel i: from the uploaded integer plane rawLuma, converted as convertToFloatPlane would (the float
+// went through memory, so it goes through unfused()), or from the float plane luma when rawLuma is null.
+float lumaAt(float* luma, uint8_t* rawLuma, int rawLumaFormat, float rawLumaScale, int64_t i, int64_t width, uint zero){
+    if (rawLuma == nullptr) return luma[i];
+    return unfused(rawLumaSample(rawLuma, (uint64_t)i, (uint64_t)width, rawLumaFormat, rawLumaScale), zero);
+}
+
 // YUVToLinRGB with the chroma's vertical upsampling done for each pixel instead of in a pass of its own: the
-// chroma comes from chroma1 and chroma2 (full width, verticalMode says which rows), the luma from p0, and the
-// linear RGB goes to p0, p1 and p2. chroma1 and chroma2 may be p1 and p2 when verticalMode is VERTICAL_NONE.
-// One thread per pixel, blockIdx.y the row.
+// chroma comes from chroma1 and chroma2 (full width, verticalMode says which rows), the luma from p0 or rawLuma
+// (lumaAt), and the linear RGB goes to p0, p1 and p2. chroma1 and chroma2 may be p1 and p2 when verticalMode is
+// VERTICAL_NONE. One thread per pixel, blockIdx.y the row.
 [shader("compute")]
 [numthreads(256, 1, 1)]
-void YUVToLinRGBUpsampled(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* p0, uniform float* p1, uniform float* p2, uniform float* chroma1, uniform float* chroma2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform uint zero){
+void YUVToLinRGBUpsampled(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* p0, uniform float* p1, uniform float* p2, uniform float* chroma1, uniform float* chroma2, uniform uint64_t width64, uniform uint64_t height64, uniform int verticalMode, uniform Vship_YUVMatrix_t matrix, uniform Vship_TransferFunction_t transfer, uniform int libjxlArithmetic, uniform uint zero, uniform uint8_t* rawLuma, uniform int rawLumaFormat, uniform float rawLumaScale){
     const int64_t width = (int64_t)width64;
     const int64_t height = (int64_t)height64;
     const int64_t x = threadIdx.x + 256*blockIdx.x;
@@ -206,7 +214,7 @@ void YUVToLinRGBUpsampled(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : S
     if (x >= width) return;
     const int64_t i = r*width + x;
 
-    float3 val = {p0[i], unfused(upsampledChroma(chroma1, x, r, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, r, width, height, verticalMode), zero)};
+    float3 val = {lumaAt(p0, rawLuma, rawLumaFormat, rawLumaScale, i, width, zero), unfused(upsampledChroma(chroma1, x, r, width, height, verticalMode), zero), unfused(upsampledChroma(chroma2, x, r, width, height, verticalMode), zero)};
 
     val = inverseMatrixNCL(val, matrix);
     val = inverseTransfer(val, transfer, libjxlArithmetic != 0);
