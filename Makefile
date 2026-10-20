@@ -70,6 +70,9 @@ else ifeq ($(BACKEND), Vulkan)
 	VSHIP_LD = $(CXX)
 	VSHIP_CXX = $(CXX)
 	VSHIP_CXXFLAGS += -DVULKANBUILD -Wno-ignored-attributes -Wno-unused-variable -Wno-nullability-completeness -Wno-unused-private-field
+	#the host's float arithmetic (the scores' final sums, the kernels' coefficients) rounded as written, as on an
+	#x86-64 build without FMA: clang fuses multiply-adds by default wherever the CPU has FMA (arm64, -march=native)
+	VSHIP_CXXFLAGS += -ffp-contract=off
 	ifeq ($(OS),Windows_NT)
 		VSHIP_CXXFLAGS += -I "${VULKAN_SDK}\Include"
 		VSHIP_LDFLAGS += -L "${VULKAN_SDK}\Lib" -lvulkan-1
