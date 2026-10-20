@@ -1,8 +1,8 @@
-# Vship, 4KVCD fork: faster Vulkan metrics that match their references
+# Vship-fast: faster Vulkan metrics that match their references
 
-**This fork of [Vship](https://codeberg.org/Line-fr/Vship) makes the Vulkan backend 1.5-2.2x faster than upstream
-for Butteraugli, 1.6-2.5x for CVVDP and up to 1.6x for SSIMULACRA2, and makes SSIMULACRA2 match libjxl and CVVDP
-match pycvvdp. The speed changes leave the output bit-identical on NVIDIA ([details](#how-the-output-is-checked)).**
+**Vship-fast, a fork of [Vship](https://codeberg.org/Line-fr/Vship), makes the Vulkan backend 1.5-2.2x faster
+than upstream for Butteraugli, 1.6-2.5x for CVVDP and up to 1.6x for SSIMULACRA2, and makes SSIMULACRA2 match
+libjxl and CVVDP match pycvvdp. The speed changes leave the output bit-identical on NVIDIA ([details](#how-the-output-is-checked)).**
 
 **Only the Vulkan backend is optimized and changed.** The HIP/CUDA backend is upstream's, with upstream's speed
 and scores.
