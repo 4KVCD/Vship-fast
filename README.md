@@ -102,16 +102,14 @@ of 27 input formats (bit depths, ranges, chroma layouts, odd sizes, matrices, tr
 and the last ones with padded input lines. All were identical. On a Radeon 8060S, the accuracy baseline before any
 speed work and the last speed commit give identical output, apart from the bug fixes above, once both are built
 with NoContraction (before it, four early commits rounded slightly differently on AMD). The Butteraugli exactness
-work that followed was checked pixel by pixel against libjxl on both GPUs. The tools are in `perf-tools/` on the
-`perf-test-tools` branch.
+work that followed was checked pixel by pixel against libjxl on both GPUs. The speed and output-check tools are in
+[`perf-tools/`](perf-tools/); they are test tools, not part of the library.
 
-## Branches
+## Branch
 
-- `perf-metrics` (default): the fork's main line, based on upstream's e99aac2. Later upstream commits, including
-  upstream's own versions of some of these fixes, are not merged.
-- `perf-test-tools`: `perf-metrics` plus the speed and output-check tools.
-- `main`: upstream Vship at e99aac2.
-- `amd-opt*`, `exact-*`: work in progress, tested on AMD and NVIDIA before being merged.
+`perf-metrics` is the fork's only branch, based on upstream's
+[e99aac2](https://codeberg.org/Line-fr/Vship/commit/e99aac21caa8d42fb7255ff1923331df678310e6). Later upstream
+commits, including upstream's own versions of some of these fixes, are not merged.
 
 ## Building and using
 
