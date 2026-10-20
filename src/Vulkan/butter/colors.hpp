@@ -1,14 +1,14 @@
 namespace butter{
 
 //Butteraugli's opsin dynamics XYB of src (linear RGB) into dst, which must not be src: opsinDynamicsBlur blurs the 3
-//planes (window 3) and combines them with the image in one pass. When halfScale is not 0, the kernel also writes the
-//image's half scale there (the mean of each 2x2 block of each plane, the 3 planes one after the other).
+//planes (sigma 1.2, libjxl's Separable5) and combines them with the image in one pass. When halfScale is not 0, the
+//kernel also writes the image's half scale there (the mean of each 2x2 block of each plane, the 3 planes one after
+//the other).
 void placeOpsinDynamicsImage(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuff, VkDeviceAddress src[3], VkDeviceAddress dst[3], uint64_t width, uint64_t height, GaussianHandle& gaussianHandle, float intensity_multiplier, VkDeviceAddress halfScale = 0){
-    VkPipeline pipeline = deviceHelper->cachedPipeline["separableBlur3Butter.spv:opsinDynamicsBlur"];
+    VkPipeline pipeline = deviceHelper->cachedPipeline["separableBlur2Butter.spv:opsinDynamicsBlur"];
     uint8_t kernelArguments[128];
-    //0.0f is the 0 that each blur sum starts from
     const int writeHalfScale = (halfScale != 0) ? 1 : 0;
-    fillKernelArguments(0, kernelArguments, src[0], src[1], src[2], dst[0], dst[1], dst[2], width, height, gaussianHandle.get(0), gaussianHandle.getIntegral(0), 0.0f, intensity_multiplier, halfScale, writeHalfScale);
+    fillKernelArguments(0, kernelArguments, src[0], src[1], src[2], dst[0], dst[1], dst[2], width, height, gaussianHandle.get(0), intensity_multiplier, halfScale, writeHalfScale);
     //32x64 outputs per workgroup, as separableBlur
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, (width-1)/32+1, (height-1)/64+1, 1);
     std::vector<MemoryBarrierPipeline> barriers(6);

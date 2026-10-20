@@ -1,3 +1,12 @@
+// libjxl's Butteraugli masking (lib/jxl/butteraugli/butteraugli.cc). libjxl compiles these functions for the CPU it
+// runs on (AVX2 here), and its compiler fuses each multiplication and addition written in one C++ expression (the
+// left product when both sides of an addition are products): those are the fma() calls below. Every other
+// operation is rounded on its own, and square roots are correctly rounded like the CPU's.
+
+import exactMathModule;
+
+// libjxl's CombineChannelsForMasking then DiffPrecompute (mul 6.19424080439, bias 12.61050594197), with a, b and c
+// its muls 2.5, 0.4 and 0.4
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void maskinit(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* hfx, uniform float* uhfx, uniform float* hfy, uniform float* uhfy, uniform uint64_t width, uniform float a, uniform float b, uniform float c){
@@ -5,16 +14,14 @@ void maskinit(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, u
 
     if (x >= width) return;
 
-    float xdiff = (uhfx[x]+hfx[x])*a;
-    float ydiff = uhfy[x]*b + hfy[x]*c;
-    float res = sqrt(xdiff*xdiff + ydiff*ydiff);
+    const float xdiff = (uhfx[x] + hfx[x])*a;
+    const float ydiff = fma(uhfy[x], b, hfy[x]*c);
+    const float combined = sqrtRounded(fma(xdiff, xdiff, ydiff*ydiff));
 
     const float mul = 6.19424080439f;
     const float bias_arg = 12.61050594197f;
     const float bias = mul*bias_arg;
-    res = sqrt(mul * abs(res) + bias) - sqrt(bias);
-    hfx[x] = res;
-    //if (x == 10000) printf("maskxyb : %f from hfx %f, uhfx %f, hfy %f, uhfy %f\n", dst[x], hfx[x], uhfx[x], hfy[x], uhfy[x]);
+    hfx[x] = sqrtRounded(fma(mul, abs(combined), bias)) - sqrtRounded(bias);
 }
 
 float3 StoreMin3(const float v, float3 mins) {
@@ -55,19 +62,19 @@ void fuzzyerrosion(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Group
             float v = src[(y-kStep)*width + x - kStep];
             mins = StoreMin3(v, mins);
         }
-        if (y < height - kStep) {
+        if (y + kStep < height) {
             float v = src[(y+kStep)*width + x - kStep];
             mins = StoreMin3(v, mins);
         }
     }
-    if (x < width - kStep) {
+    if (x + kStep < width) {
         float v = src[y*width + x + kStep];
         mins = StoreMin3(v, mins);
         if (y >= kStep) {
             float v = src[(y-kStep)*width + x + kStep];
             mins = StoreMin3(v, mins);
         }
-        if (y < height - kStep) {
+        if (y + kStep < height) {
             float v = src[(y+kStep)*width + x + kStep];
             mins = StoreMin3(v, mins);
         }
@@ -76,10 +83,10 @@ void fuzzyerrosion(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_Group
         float v = src[(y-kStep)*width + x];
         mins = StoreMin3(v, mins);
     }
-    if (y < height - kStep) {
+    if (y + kStep < height) {
         float v = src[(y+kStep)*width + x];
         mins = StoreMin3(v, mins);
     }
-    dst[ux] = (0.45f * mins.x + 0.3f * mins.y + 0.25f * mins.z);
-    //if (ux == 10000) printf("Erosion : %f from %f\n", dst[ux], src[ux]);
+    // libjxl: 0.45f * min0 + 0.3f * min1 + 0.25f * min2
+    dst[ux] = fma(0.25f, mins.z, fma(0.45f, mins.x, 0.3f * mins.y));
 }

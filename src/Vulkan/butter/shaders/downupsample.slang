@@ -1,16 +1,18 @@
+// libjxl's AddSupersampled2x (lib/jxl/butteraugli/butteraugli.cc): diffmap = diffmap*(1 - 0.3*w) + w*small, small
+// read at half resolution. libjxl multiplies by 1 - 0.3*w in double (its kHeuristicMixingValue is a double), rounds
+// to float, then adds w*small in float without fusing (that code is compiled for the baseline CPU). The host gives
+// that double factor as mixBits; mulDoubleRounded (exactMathModule) computes the product exactly as libjxl does.
+
+import exactMathModule;
+
 [shader("compute")]
 [numthreads(16, 16, 1)]
-void addsupersample2X(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* diffmap, uniform float* diffmapsmall, uniform uint64_t width, uniform uint64_t height, uniform float w){ //threads represents output pixels
-    uint64_t x = threadIdx.x + blockIdx.x*16; // < width >> 1 +1
-    uint64_t y = threadIdx.y + blockIdx.y*16; // < height >> 1 +1
-
-    //int64_t newh = (height-1)/2 + 1;
-    uint64_t neww = (width-1)/2 + 1;
-    
+void addsupersample2X(uint3 threadIdx : SV_GroupThreadID, uint3 blockIdx : SV_GroupID, uniform float* diffmap, uniform float* diffmapsmall, uniform uint64_t width, uniform uint64_t height, uniform uint64_t mixBits, uniform float w){
+    const uint64_t x = threadIdx.x + blockIdx.x*16;
+    const uint64_t y = threadIdx.y + blockIdx.y*16;
+    const uint64_t neww = (width-1)/2 + 1;
     if (x >= width || y >= height) return;
 
-    //if (y*width+x == 1841628) printf("small got %f and normal got %f\n", diffmapsmall[(y/2)*neww+x/2], diffmap[y*width+x]);
-
-    diffmap[y*width+x] *= 1.0 - 0.3*w;
-    diffmap[y*width+x] += w*diffmapsmall[(y/2)*neww+x/2];
+    const uint64_t i = y*width + x;
+    diffmap[i] = mulDoubleRounded(diffmap[i], mixBits) + w*diffmapsmall[(y/2)*neww + x/2];
 }

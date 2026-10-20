@@ -4,9 +4,9 @@ void placeComputeDiffmap(VshipDeviceHelper* deviceHelper, VkCommandBuffer cmdBuf
     uint64_t th_x = 256;
     uint64_t bl_x = (width-1)/th_x + 1;
 
-    VkPipeline pipeline = deviceHelper->cachedPipeline["combineMasksButter.spv:computeDiffmap"];
+    VkPipeline pipeline = deviceHelper->fp64Shader("combineMasks", "computeDiffmap");
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, mask, block_diff_dc0, block_diff_dc1, block_diff_dc2, block_diff_ac0, block_diff_ac1, block_diff_ac2, dst, width);
+    fillKernelArguments(0, kernelArguments, mask, block_diff_dc0, block_diff_dc1, block_diff_dc2, block_diff_ac0, block_diff_ac1, block_diff_ac2, dst, width, 0u); //0u: the run-time zero of the double-float steps
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, 1, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {block_diff_dc0, width*sizeof(float), VK_ACCESS_2_MEMORY_READ_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT},

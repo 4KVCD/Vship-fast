@@ -9,9 +9,16 @@ void inline placeAddsupersample2X(VshipDeviceHelper* deviceHelper, VkCommandBuff
     uint64_t newh = (height-1)/2 + 1;
     uint64_t neww = (width-1)/2 + 1;
 
+    //libjxl's 1 - kHeuristicMixingValue*w, in double; volatile keeps the product rounded on its own, as libjxl's is,
+    //should the compiler fuse multiply-adds
+    volatile double product = 0.3*(double)w;
+    const double mix = 1.0 - product;
+    uint64_t mixBits;
+    memcpy(&mixBits, &mix, sizeof mixBits);
+
     VkPipeline pipeline = deviceHelper->cachedPipeline["downupsampleButter.spv:addsupersample2X"];
     uint8_t kernelArguments[128];
-    fillKernelArguments(0, kernelArguments, diffmap, diffmapsmall, width, height, w);
+    fillKernelArguments(0, kernelArguments, diffmap, diffmapsmall, width, height, mixBits, w);
     deviceHelper->device.placeKernel(cmdBuff, pipeline, kernelArguments, bl_x, bl_y, 1);
     deviceHelper->device.placeMemoryBarriers(cmdBuff, {
         {diffmap, width*height*sizeof(float), VK_ACCESS_2_MEMORY_WRITE_BIT, VK_ACCESS_2_MEMORY_READ_BIT},
