@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <vector>
 #include <mutex>
 #include <string>
@@ -30,7 +31,8 @@ typedef struct InternalDeviceInfo{
 
 std::filesystem::path shaderDirectory = "libvshipSpvShaders";
 
-//Preloaded at device initialization to avoid repeated harddrive access and compilation
+//Each embedded shader's entry points: the kernels a pipeline is made for, the first time one is asked for
+//(LazyPipelines)
 const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerShader = {
     {"Planed.spv", {"StrideEliminator", "StrideAdder"}},
     {"kernelTest.spv", {"main"}},
@@ -83,46 +85,68 @@ const std::unordered_map<std::string, std::vector<std::string>> entry_pointsPerS
     {"resizeCVVDP.spv", {"horizontalResizeTranspose"}},
 };
 
+//A device's compute pipelines, addressed 'shaderName':'entrypoint', each made the first time a kernel asks for it.
+//Made all at once when the device opened, every process that opens a GPU compiled every metric's kernels (a GPU
+//check needs only kernelTest's, a pass only its metric's): seconds wherever the driver's shader cache could not serve
+//them, as on its first use, after a driver update, or while another process of the same program held that cache.
+class LazyPipelines{
+    VkDeviceManager& device;
+    std::unordered_map<std::string, VkPipeline> made;
+    std::mutex madeLock;
+public:
+    explicit LazyPipelines(VkDeviceManager& device) : device(device) {}
+    VkPipeline operator[](const std::string& key){
+        std::lock_guard<std::mutex> guard(madeLock);
+        const auto found = made.find(key);
+        if (found != made.end()) return found->second;
+        const size_t colon = key.find(':');
+        const std::string shaderName = key.substr(0, colon);
+        const std::string entry_point = colon == std::string::npos ? std::string() : key.substr(colon + 1);
+        const auto shader = entry_pointsPerShader.find(shaderName);
+        if (shader == entry_pointsPerShader.end() ||
+            std::find(shader->second.begin(), shader->second.end(), entry_point) == shader->second.end()) {
+            throw VshipError(HIPError, __FILE__, __LINE__, "no kernel " + key);
+        }
+        std::vector<char>& embedded = shaderNameToByteCode[shaderName];
+        std::vector<char> forMetal;
+        if (device.isMoltenVK) forMetal = metalShaders::rewrite(embedded, metalShaders::keepsFastMath(shaderName));
+        VkShaderModule shaderModule = device.loadShaderModule(device.isMoltenVK ? forMetal : embedded);
+        VkPipeline pipeline;
+        try{
+            pipeline = device.createComputePipeline(shaderModule, entry_point);
+        } catch (...){
+            device.freeShaderModule(shaderModule);
+            throw;
+        }
+        device.freeShaderModule(shaderModule);
+        made.emplace(key, pipeline);
+        return pipeline;
+    }
+    ~LazyPipelines(){
+#ifndef _WIN32
+        for (const auto& [key, pipeline]: made){
+            device.destroyComputePipeline(pipeline);
+        }
+#endif
+    }
+};
+
 struct VshipDeviceHelper{
-    //should be readonly, address is 'shaderName':'entrypoint'
-    std::unordered_map<std::string, VkPipeline> cachedPipeline;
     //can be usedas expected
     VkDeviceManager device;
     //the GPU's PCI vendor ID (VkPhysicalDeviceProperties::vendorID), for kernels whose best workgroup size differs
     uint32_t vendorID;
-    VshipDeviceHelper(VkInstance instance, VkPhysicalDevice& hd) : device(instance, hd) {
+    //made as kernels ask for them; the double versions of shaders (see fp64Shader) only on GPUs with 64-bit floats
+    LazyPipelines cachedPipeline;
+    VshipDeviceHelper(VkInstance instance, VkPhysicalDevice& hd) : device(instance, hd), cachedPipeline(device) {
         VkPhysicalDeviceProperties properties;
         vkGetPhysicalDeviceProperties(hd, &properties);
         vendorID = properties.vendorID;
-        //auto init = std::chrono::high_resolution_clock::now();
-        for (const auto& [shaderName, entry_points] : entry_pointsPerShader) {
-            //the double versions of shaders (see fp64Shader) only on GPUs with 64-bit floats
-            if (shaderName.find("Fp64") != std::string::npos && !device.hasFloat64) continue;
-            std::vector<char>& embedded = shaderNameToByteCode[shaderName];
-            std::vector<char> forMetal;
-            if (device.isMoltenVK) forMetal = metalShaders::rewrite(embedded, metalShaders::keepsFastMath(shaderName));
-            VkShaderModule shaderModule = device.loadShaderModule(device.isMoltenVK ? forMetal : embedded);
-            //std::cout << shaderName << " " << shaderNameToByteCode[shaderName].size() << std::endl;
-            for (const std::string& entry_point: entry_points){
-                cachedPipeline[shaderName + ":" + entry_point] = device.createComputePipeline(shaderModule, entry_point);
-            }
-            device.freeShaderModule(shaderModule);
-        }
-        //auto fin = std::chrono::high_resolution_clock::now();
-        //uint64_t millitaken = std::chrono::duration_cast<std::chrono::milliseconds>(fin - init).count();
-        //std::cout << "Pipeline Creation took " << millitaken << " ms" << std::endl;
     }
     //The pipeline "<name>Fp64Butter.spv:<entry>" on GPUs with 64-bit floats, else "<name>Butter.spv:<entry>": the
     //double version computes like libjxl, the float one approximates it.
     VkPipeline fp64Shader(const std::string& name, const std::string& entry){
         return cachedPipeline[name + (device.hasFloat64 ? "Fp64Butter.spv:" : "Butter.spv:") + entry];
-    }
-    ~VshipDeviceHelper(){
-#ifndef _WIN32
-        for (const auto& [path, pipeline]: cachedPipeline){
-            device.destroyComputePipeline(pipeline);
-        }
-#endif
     }
 };
 
